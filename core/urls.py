@@ -35,10 +35,10 @@ urlpatterns = [
     
     
     # GitHub integration management (auth required)
-    path("api/github/integrations/", views.github_integrations),
+    path("github/integrations/", views.github_integrations),
 
     # GitHub webhook (public)
-    path("api/github/webhook/", views.github_webhook),
+    path("github/webhook/", views.github_webhook),
 
     
 ]

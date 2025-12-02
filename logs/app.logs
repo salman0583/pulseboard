@@ -4604,3 +4604,22 @@ INFO 2025-12-02 16:12:43,642 autoreload Watching for file changes with StatReloa
 INFO 2025-12-02 16:13:12,914 views [OTP] OTP generated for syed
 INFO 2025-12-02 16:23:35,636 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
 INFO 2025-12-02 16:23:36,267 autoreload Watching for file changes with StatReloader
+INFO 2025-12-02 18:33:19,249 autoreload Watching for file changes with StatReloader
+INFO 2025-12-02 18:35:02,014 autoreload C:\Users\SyedSalman\learning\core\urls.py changed, reloading.
+INFO 2025-12-02 18:35:02,718 autoreload Watching for file changes with StatReloader
+INFO 2025-12-02 18:35:08,313 autoreload C:\Users\SyedSalman\learning\core\urls.py changed, reloading.
+INFO 2025-12-02 18:35:08,914 autoreload Watching for file changes with StatReloader
+WARNING 2025-12-02 18:36:27,764 log Unauthorized: /api/github/integrations/
+INFO 2025-12-02 18:37:05,898 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2025-12-02 18:37:06,708 autoreload Watching for file changes with StatReloader
+WARNING 2025-12-02 18:37:13,353 log Bad Request: /api/github/integrations/
+INFO 2025-12-02 18:37:32,133 views [OTP] OTP generated for syed
+WARNING 2025-12-02 18:38:36,466 log Bad Request: /api/github/integrations/
+INFO 2025-12-02 18:38:44,906 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2025-12-02 18:38:45,782 autoreload Watching for file changes with StatReloader
+WARNING 2025-12-02 18:38:48,200 log Bad Request: /api/github/integrations/
+WARNING 2025-12-02 18:42:19,727 log Bad Request: /api/github/integrations/
+INFO 2025-12-02 18:49:38,930 middleware Access token expired, attempting refresh
+INFO 2025-12-02 18:49:38,957 jwt_utils [_is_admin] Checking is_admin for identifier: syed
+INFO 2025-12-02 18:49:38,975 jwt_utils [_is_admin] DB row: (1,)
+INFO 2025-12-02 18:49:38,998 middleware Rotated tokens for syed
