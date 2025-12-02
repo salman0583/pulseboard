@@ -1,0 +1,267 @@
+{
+  "url": "ws://localhost:9000/ws/chat/?access_token=YOUR_JWT_TOKEN",
+  "tests": [
+    {
+      "name": "ping",
+      "request": {
+        "action": "ping"
+      },
+      "expected_example": {
+        "event": "pong",
+        "ts": "2025-11-25T12:34:56Z"
+      }
+    },
+    {
+      "name": "join_channel_1",
+      "request": {
+        "action": "join",
+        "channel_id": 1
+      },
+      "expected_example": {
+        "event": "joined",
+        "channel_id": 1
+      }
+    },
+    {
+      "name": "send_message_channel_1",
+      "request": {
+        "action": "send",
+        "channel_id": 1,
+        "body": "Hello team, this is from Postman"
+      },
+      "expected_example": {
+        "event": "message",
+        "id": 123,
+        "sender": "you@example.com",
+        "body": "Hello team, this is from Postman",
+        "channel_id": 1,
+        "created_at": "2025-11-25T12:34:56Z"
+      }
+    },
+    {
+      "name": "typing_true",
+      "request": {
+        "action": "typing",
+        "channel_id": 1,
+        "is_typing": true
+      },
+      "expected_example": {
+        "event": "typing",
+        "channel_id": 1,
+        "user": "you@example.com",
+        "is_typing": true
+      }
+    },
+    {
+      "name": "read_receipt_for_message_123",
+      "request": {
+        "action": "read_receipt",
+        "message_id": 123
+      },
+      "expected_example": {
+        "event": "read_receipt",
+        "message_id": 123,
+        "reader": "you@example.com",
+        "read_at": "2025-11-25T12:34:56Z"
+      }
+    },
+    {
+      "name": "sync_history_channel_1",
+      "request": {
+        "action": "sync_history",
+        "channel_id": 1,
+        "limit": 20
+      },
+      "expected_example": {
+        "event": "history",
+        "channel_id": 1,
+        "messages": [
+          {
+            "id": 100,
+            "sender": "a@a.com",
+            "body": "Oldest message",
+            "channel_id": 1,
+            "created_at": "2025-11-25T12:00:00Z"
+          }
+        ]
+      }
+    }
+  ]
+}
+
+
+
+{
+  "url": "ws://localhost:9000/ws/activity/?access_token=YOUR_JWT_TOKEN",
+  "tests": [
+    {
+      "name": "join_workspace_1",
+      "request": {
+        "action": "join",
+        "workspace_id": 1
+      },
+      "expected_example": {
+        "event": "joined",
+        "workspace_id": 1
+      }
+    },
+    {
+      "name": "simulate_activity_workspace_1",
+      "request": {
+        "action": "simulate_activity",
+        "workspace_id": 1,
+        "summary": "New task created by Salman"
+      },
+      "expected_example": {
+        "event": "activity",
+        "workspace_id": 1,
+        "summary": "New task created by Salman",
+        "actor": "you@example.com",
+        "created_at": "2025-11-25T12:34:56Z"
+      }
+    },
+    {
+      "name": "invalid_action_example",
+      "request": {
+        "action": "invalid_action_name"
+      },
+      "expected_example": {
+        "event": "error",
+        "code": "invalid_action",
+        "message": "Invalid action",
+        "received": "invalid_action_name"
+      }
+    }
+  ]
+}
+
+
+
+
+{
+  "url": "ws://localhost:9000/ws/presence/?access_token=YOUR_JWT_TOKEN",
+  "tests": [
+    {
+      "name": "ping",
+      "request": {
+        "action": "ping"
+      },
+      "expected_example": {
+        "event": "pong",
+        "ts": "2025-11-25T12:34:56Z"
+      }
+    },
+    {
+      "name": "set_status_online",
+      "request": {
+        "action": "status",
+        "status": "online"
+      },
+      "expected_example": {
+        "event": "presence_update",
+        "user": "you@example.com",
+        "status": "online",
+        "last_seen": "2025-11-25T12:34:56Z"
+      }
+    },
+    {
+      "name": "set_status_idle",
+      "request": {
+        "action": "status",
+        "status": "idle"
+      },
+      "expected_example": {
+        "event": "presence_update",
+        "user": "you@example.com",
+        "status": "idle",
+        "last_seen": "2025-11-25T12:35:10Z"
+      }
+    },
+    {
+      "name": "set_status_offline",
+      "request": {
+        "action": "status",
+        "status": "offline"
+      },
+      "expected_example": {
+        "event": "presence_update",
+        "user": "you@example.com",
+        "status": "offline",
+        "last_seen": "2025-11-25T12:35:30Z"
+      }
+    },
+    {
+      "name": "invalid_status_value",
+      "request": {
+        "action": "status",
+        "status": "busy"
+      },
+      "expected_example": {
+        "event": "presence_update",
+        "user": "you@example.com",
+        "status": "online",
+        "last_seen": "2025-11-25T12:36:00Z"
+      }
+    }
+  ]
+}
+
+
+{
+  "url": "ws://localhost:9000/ws/notifications/?access_token=YOUR_JWT_TOKEN",
+  "tests": [
+    {
+      "name": "send_test_notification_mention",
+      "request": {
+        "action": "notify",
+        "type": "mention",
+        "payload": {
+          "channel_id": 1,
+          "message_id": 5,
+          "by": "salman@gmail.com"
+        }
+      },
+      "expected_example": {
+        "event": "notification",
+        "type": "mention",
+        "payload": {
+          "channel_id": 1,
+          "message_id": 5,
+          "by": "salman@gmail.com"
+        },
+        "created_at": "2025-11-25T12:34:56Z"
+      }
+    },
+    {
+      "name": "send_system_notification",
+      "request": {
+        "action": "notify",
+        "type": "system",
+        "payload": {
+          "message": "Welcome to PulseBoard!"
+        }
+      },
+      "expected_example": {
+        "event": "notification",
+        "type": "system",
+        "payload": {
+          "message": "Welcome to PulseBoard!"
+        },
+        "created_at": "2025-11-25T12:40:00Z"
+      }
+    },
+    {
+      "name": "invalid_action_example",
+      "request": {
+        "action": "something_else"
+      },
+      "expected_example": {
+        "event": "error",
+          "code": "invalid_action",
+          "message": "Invalid action",
+          "received": "something_else"
+      }
+    }
+  ]
+}
+
