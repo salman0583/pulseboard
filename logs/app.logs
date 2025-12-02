@@ -4623,3 +4623,69 @@ INFO 2025-12-02 18:49:38,930 middleware Access token expired, attempting refresh
 INFO 2025-12-02 18:49:38,957 jwt_utils [_is_admin] Checking is_admin for identifier: syed
 INFO 2025-12-02 18:49:38,975 jwt_utils [_is_admin] DB row: (1,)
 INFO 2025-12-02 18:49:38,998 middleware Rotated tokens for syed
+ERROR 2025-12-02 19:10:51,063 log Internal Server Error: /api/github/webhook/
+Traceback (most recent call last):
+  File "C:\Users\SyedSalman\learning\env\lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\SyedSalman\learning\env\lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\SyedSalman\learning\env\lib\site-packages\django\views\decorators\csrf.py", line 56, in wrapper_view
+    return view_func(*args, **kwargs)
+  File "C:\Users\SyedSalman\learning\env\lib\site-packages\django\views\decorators\http.py", line 43, in inner
+    return func(request, *args, **kwargs)
+  File "C:\Users\SyedSalman\learning\core\views.py", line 1619, in github_webhook
+    _handle_github_event(ws_id, repo_full_name, event, events_mask, payload)
+  File "C:\Users\SyedSalman\learning\core\views.py", line 1658, in _handle_github_event
+    _insert_activity(
+  File "C:\Users\SyedSalman\learning\core\views.py", line 1628, in _insert_activity
+    run_query(
+  File "C:\Users\SyedSalman\learning\db.py", line 47, in run_query
+    cursor.execute(query, params or ())
+  File "C:\Users\SyedSalman\learning\env\lib\site-packages\MySQLdb\cursors.py", line 179, in execute
+    res = self._query(mogrified_query)
+  File "C:\Users\SyedSalman\learning\env\lib\site-packages\MySQLdb\cursors.py", line 330, in _query
+    db.query(q)
+  File "C:\Users\SyedSalman\learning\env\lib\site-packages\MySQLdb\connections.py", line 280, in query
+    _mysql.connection.query(self, query)
+MySQLdb.DataError: (1265, "Data truncated for column 'ref_id' at row 1")
+WARNING 2025-12-02 19:10:56,879 log Unauthorized: /api/activities/
+INFO 2025-12-02 19:11:02,348 views [OTP] OTP generated for syed
+INFO 2025-12-02 19:16:16,938 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2025-12-02 19:16:18,071 autoreload Watching for file changes with StatReloader
+INFO 2025-12-02 19:24:29,936 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2025-12-02 19:24:30,749 autoreload Watching for file changes with StatReloader
+INFO 2025-12-02 19:24:39,511 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2025-12-02 19:24:40,365 autoreload Watching for file changes with StatReloader
+INFO 2025-12-02 19:25:21,172 views [GH] Event=push repo=salman0583/pulseboard
+ERROR 2025-12-02 19:25:21,180 views [GH] Failed to insert activity: (1265, "Data truncated for column 'ref_id' at row 1")
+Traceback (most recent call last):
+  File "C:\Users\SyedSalman\learning\core\views.py", line 1683, in github_webhook
+    run_query(
+  File "C:\Users\SyedSalman\learning\db.py", line 47, in run_query
+    cursor.execute(query, params or ())
+  File "C:\Users\SyedSalman\learning\env\lib\site-packages\MySQLdb\cursors.py", line 179, in execute
+    res = self._query(mogrified_query)
+  File "C:\Users\SyedSalman\learning\env\lib\site-packages\MySQLdb\cursors.py", line 330, in _query
+    db.query(q)
+  File "C:\Users\SyedSalman\learning\env\lib\site-packages\MySQLdb\connections.py", line 280, in query
+    _mysql.connection.query(self, query)
+MySQLdb.DataError: (1265, "Data truncated for column 'ref_id' at row 1")
+ERROR 2025-12-02 19:25:21,193 log Internal Server Error: /api/github/webhook/
+INFO 2025-12-02 19:34:37,733 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2025-12-02 19:34:38,701 autoreload Watching for file changes with StatReloader
+INFO 2025-12-02 19:34:59,753 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2025-12-02 19:35:00,519 autoreload Watching for file changes with StatReloader
+INFO 2025-12-02 19:35:08,312 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2025-12-02 19:35:09,089 autoreload Watching for file changes with StatReloader
+INFO 2025-12-02 19:35:28,165 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2025-12-02 19:35:28,982 autoreload Watching for file changes with StatReloader
+INFO 2025-12-02 19:35:36,807 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2025-12-02 19:35:37,497 autoreload Watching for file changes with StatReloader
+INFO 2025-12-02 19:35:56,600 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2025-12-02 19:35:57,351 autoreload Watching for file changes with StatReloader
+INFO 2025-12-02 19:36:09,347 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2025-12-02 19:36:10,138 autoreload Watching for file changes with StatReloader
+INFO 2025-12-02 19:36:22,727 middleware Access token expired, attempting refresh
+INFO 2025-12-02 19:36:22,755 middleware Rotated tokens for syed
+INFO 2025-12-02 19:37:50,983 views [GH] Event=push repo=salman0583/pulseboard
+INFO 2025-12-02 19:37:50,994 views [GH] Activity row created: ws=1 type=github_push

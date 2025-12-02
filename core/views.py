@@ -1540,180 +1540,166 @@ def github_integrations(request):
 
 
 
+
 @csrf_exempt
-@require_POST
 def github_webhook(request):
     """
-    Public endpoint for GitHub webhooks.
-    URL example: /api/github/webhook/
-    You configure this URL + secret in GitHub repo settings.
+    POST /api/github/webhook/
+
+    Validate GitHub webhook and insert rows into `activities`.
+    Uses github_repos.webhook_secret for HMAC.
     """
-    # GitHub sends JSON body
-    raw_body = request.body
+    if request.method != "POST":
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
 
-    # Headers
-    event = request.META.get("HTTP_X_GITHUB_EVENT")
-    signature_256 = request.META.get("HTTP_X_HUB_SIGNATURE_256")  # format: sha256=...
-    # older: X-Hub-Signature (sha1), but we'll prefer sha256
+    body = request.body
 
-    if not event or not signature_256:
-        return JsonResponse(
-            {"status": "error", "message": "Missing GitHub headers"},
-            status=400,
-        )
-
+    # --- parse JSON ---
     try:
-        payload = json.loads(raw_body.decode("utf-8"))
+        payload = json.loads(body.decode("utf-8"))
     except Exception:
-        return JsonResponse(
-            {"status": "error", "message": "Invalid JSON payload"},
-            status=400,
-        )
+        logger.exception("[GH] Invalid JSON payload")
+        return JsonResponse({"status": "error", "message": "Invalid JSON"}, status=400)
 
-    repo_full_name = payload.get("repository", {}).get("full_name")
+    repo_full_name = (payload.get("repository") or {}).get("full_name")
     if not repo_full_name:
-        return JsonResponse(
-            {"status": "error", "message": "No repository info"},
-            status=400,
-        )
+        logger.warning("[GH] Missing repository.full_name in payload")
+        return JsonResponse({"status": "success"}, status=200)  # ignore
 
-    # Find matching integration
-    integ = run_query(
+    # --- lookup integration row ---
+    row = run_query(
         """
-        SELECT id, workspace_id, events_mask, webhook_secret, is_active
+        SELECT workspace_id, webhook_secret, events_mask
         FROM github_repos
-        WHERE repo_full_name = %s AND is_active = 1
+        WHERE repo_full_name = %s
+          AND is_active = 1
         LIMIT 1
         """,
         (repo_full_name,),
         fetchone=True,
     )
 
-    if not integ:
-        # No integration configured for this repo
-        return JsonResponse({"status": "success", "message": "No matching integration"}, status=200)
+    if not row:
+        logger.warning("[GH] No active github_repos row for %s", repo_full_name)
+        return JsonResponse({"status": "success"}, status=200)
 
-    ws_id = integ["workspace_id"]
-    events_mask = integ["events_mask"]
-    secret = integ["webhook_secret"]
+    workspace_id = row["workspace_id"]
+    secret = row["webhook_secret"] or ""
+    events_mask = row["events_mask"] or ""
+    mask = [m.strip() for m in events_mask.lower().split(",") if m.strip()]
 
-    # Verify signature
-    # Signature header: sha256=...
-    try:
-        algo, sig = signature_256.split("=", 1)
-    except ValueError:
-        return JsonResponse({"status": "error", "message": "Bad signature format"}, status=400)
+    # --- verify signature ---
+    sig_header = request.META.get("HTTP_X_HUB_SIGNATURE_256", "")
+    if not sig_header.startswith("sha256="):
+        logger.warning("[GH] Missing/invalid X-Hub-Signature-256")
+        return JsonResponse({"status": "error", "message": "Bad signature"}, status=403)
 
-    if algo != "sha256":
-        return JsonResponse({"status": "error", "message": "Unsupported signature algorithm"}, status=400)
-
-    mac = hmac.new(secret.encode("utf-8"), msg=raw_body, digestmod=hashlib.sha256)
+    sent_sig = sig_header.split("=", 1)[1]
+    mac = hmac.new(secret.encode("utf-8"), msg=body, digestmod=hashlib.sha256)
     expected_sig = mac.hexdigest()
 
-    if not hmac.compare_digest(expected_sig, sig):
-        logger.warning("GitHub webhook signature mismatch for repo %s", repo_full_name)
+    if not hmac.compare_digest(sent_sig, expected_sig):
+        logger.warning("[GH] Signature mismatch for repo %s", repo_full_name)
         return JsonResponse({"status": "error", "message": "Invalid signature"}, status=403)
 
-    # At this point, payload is trusted for this workspace
-    # Now map event -> activities row(s)
-    _handle_github_event(ws_id, repo_full_name, event, events_mask, payload)
+    # --- event type ---
+    event = request.META.get("HTTP_X_GITHUB_EVENT", "")
+    if event == "ping":
+        logger.info("[GH] Ping for %s", repo_full_name)
+        return JsonResponse({"status": "success", "message": "pong"})
 
-    return JsonResponse({"status": "success"})
+    logger.info("[GH] Event=%s repo=%s", event, repo_full_name)
 
+    actor = None
+    ref_id = None      # we'll normalize later
+    activity_type = None
+    summary = None
 
-
-
-
-def _insert_activity(workspace_id, actor_email, type_, ref_id, summary):
-    run_query(
-        """
-        INSERT INTO activities (workspace_id, actor_email, type, ref_id, summary)
-        VALUES (%s, %s, %s, %s, %s)
-        """,
-        (workspace_id, actor_email, type_, ref_id, summary),
-    )
-
-
-def _handle_github_event(workspace_id, repo_full_name, event, events_mask, payload):
-    """
-    Map GitHub event payloads into activities rows.
-    events_mask: e.g. 'push,pr,issues'
-    """
-    mask = (events_mask or "").lower().split(",")
-    mask = [m.strip() for m in mask if m.strip()]
-
-    # ------------- PUSH events -------------
+    # ================== PUSH ==================
     if event == "push" and "push" in mask:
-        pusher = payload.get("pusher", {}).get("name") or "GitHub"
-        ref = payload.get("ref", "")  # e.g. 'refs/heads/main'
+        pusher = (payload.get("pusher") or {}).get("name") or "GitHub"
+        ref = payload.get("ref", "")  # e.g. refs/heads/main
         branch = ref.split("/")[-1] if ref else ""
-        commits = payload.get("commits", []) or []
+        commits = payload.get("commits") or []
         commit_count = len(commits)
 
+        actor = pusher
+        # IMPORTANT: commit SHA is a long string; your ref_id column is numeric.
+        # Keep ref_id NULL for push so DB never complains.
+        ref_id = None
+        activity_type = "github_push"
         summary = f"{pusher} pushed {commit_count} commit(s) to {branch} in {repo_full_name}"
-        # ref_id: use head commit id if exists
-        head_commit = payload.get("head_commit") or (commits[-1] if commits else None)
-        ref_id = head_commit.get("id") if head_commit else None
 
-        _insert_activity(
-            workspace_id=workspace_id,
-            actor_email=pusher,
-            type_="github_push",
-            ref_id=ref_id,
-            summary=summary,
-        )
-
-    # ------------- PULL REQUEST events -------------
-    if event == "pull_request" and "pr" in mask:
+    # ================== PULL REQUEST ==================
+    elif event == "pull_request" and "pr" in mask:
         action = payload.get("action")
-        pr = payload.get("pull_request", {})
+        pr = payload.get("pull_request") or {}
         title = pr.get("title")
-        number = pr.get("number")
-        user = pr.get("user", {}).get("login") or "GitHub"
+        number = pr.get("number")       # small integer
+        user = (pr.get("user") or {}).get("login") or "GitHub"
         merged = pr.get("merged", False)
 
+        actor = user
+        ref_id = number
+
         if action == "opened":
-            type_ = "github_pr_opened"
+            activity_type = "github_pr_opened"
             summary = f"{user} opened PR #{number}: {title}"
         elif action == "closed" and merged:
-            type_ = "github_pr_merged"
+            activity_type = "github_pr_merged"
             summary = f"{user} merged PR #{number}: {title}"
         elif action == "closed":
-            type_ = "github_pr_closed"
+            activity_type = "github_pr_closed"
             summary = f"{user} closed PR #{number}: {title}"
         else:
-            # ignore other actions for now
-            return
+            logger.info("[GH] PR action %s ignored", action)
 
-        _insert_activity(
-            workspace_id=workspace_id,
-            actor_email=user,
-            type_=type_,
-            ref_id=number,
-            summary=summary,
-        )
-
-    # ------------- ISSUES events -------------
-    if event == "issues" and "issues" in mask:
+    # ================== ISSUES ==================
+    elif event == "issues" and "issues" in mask:
         action = payload.get("action")
-        issue = payload.get("issue", {})
+        issue = payload.get("issue") or {}
         title = issue.get("title")
-        number = issue.get("number")
-        user = issue.get("user", {}).get("login") or "GitHub"
+        number = issue.get("number")    # small integer
+        user = (issue.get("user") or {}).get("login") or "GitHub"
+
+        actor = user
+        ref_id = number
 
         if action == "opened":
-            type_ = "github_issue_opened"
+            activity_type = "github_issue_opened"
             summary = f"{user} opened issue #{number}: {title}"
         elif action == "closed":
-            type_ = "github_issue_closed"
+            activity_type = "github_issue_closed"
             summary = f"{user} closed issue #{number}: {title}"
         else:
-            return
+            logger.info("[GH] Issue action %s ignored", action)
 
-        _insert_activity(
-            workspace_id=workspace_id,
-            actor_email=user,
-            type_=type_,
-            ref_id=number,
-            summary=summary,
+    # If we didn't map anything, just acknowledge
+    if not activity_type:
+        logger.info("[GH] Event %s ignored for repo %s", event, repo_full_name)
+        return JsonResponse({"status": "success", "message": "ignored"})
+
+    # --- normalize ref_id for DB (numeric or NULL) ---
+    ref_id_db = None
+    if ref_id is not None:
+        try:
+            ref_id_db = int(ref_id)
+        except (TypeError, ValueError):
+            # If it's not an int (e.g. commit SHA), keep NULL
+            ref_id_db = None
+
+    # --- insert into activities ---
+    try:
+        run_query(
+            """
+            INSERT INTO activities (workspace_id, actor_email, type, ref_id, summary)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (workspace_id, actor, activity_type, ref_id_db, summary),
         )
+        logger.info("[GH] Activity row created: ws=%s type=%s", workspace_id, activity_type)
+    except Exception as e:
+        logger.exception("[GH] Failed to insert activity: %s", e)
+        return JsonResponse({"status": "error", "message": "DB error"}, status=500)
+
+    return JsonResponse({"status": "success"})
