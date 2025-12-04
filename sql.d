@@ -162,6 +162,20 @@ CREATE INDEX idx_tasks_assignee ON tasks(assignee_email);
 
 
 
+CREATE TABLE github_repos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    workspace_id INT NOT NULL,
+    repo_full_name VARCHAR(255) NOT NULL,   -- e.g. 'org/repo'
+    events_mask VARCHAR(100) NOT NULL DEFAULT 'push,pr,issues',
+    webhook_secret VARCHAR(255) NOT NULL,
+    is_active TINYINT(1) DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE KEY uniq_ws_repo (workspace_id, repo_full_name),
+    CONSTRAINT fk_github_repos_workspace
+        FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
+        ON DELETE CASCADE
+);
 
 
 

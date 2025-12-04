@@ -13,8 +13,11 @@ import hmac
 import hashlib
 from django.views.decorators.http import require_POST
 
+
 def _handle_github_event(ws_id, repo_full_name, event, events_mask, payload):
     raise NotImplementedError
+
+
 # DB helpers
 from db import run_query, save_refresh_token, revoke_refresh_token, get_last_insert_id
 
@@ -37,8 +40,37 @@ from core.decorators import require_access_token
 from jwt_utils import get_request_data
 
 
+def _insert_activity(workspace_id, actor_email, type_, ref_id, summary):
+    try:
+        run_query(
+            """
+            INSERT INTO activities (workspace_id, actor_email, type, ref_id, summary)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (workspace_id, actor_email, type_, ref_id, summary),
+        )
+    except Exception as e:
+        logger.exception(f"[Activity] Failed to insert: {e}")
+
+
 def _get_current_user_email(request):
     return getattr(request, "user_username", None)
+
+
+def _get_default_workspace_id(user_email):
+    row = run_query(
+        """
+        SELECT w.id
+        FROM workspaces w
+        JOIN workspace_members m ON m.workspace_id = w.id
+        WHERE m.user_email = %s
+        ORDER BY w.created_at DESC
+        LIMIT 1
+        """,
+        (user_email,),
+        fetchone=True,
+    )
+    return row["id"] if row else None
 
 
 # Decorators
@@ -131,6 +163,83 @@ def _can_create_workspace(user_identifier):
         can_create = row[1] if len(row) > 1 else 0
 
     return bool(is_admin or can_create)
+
+
+def _is_global_leader(user_email):
+    row = run_query(
+        "SELECT can_create_workspace FROM users WHERE email = %s",
+        (user_email,),
+        fetchone=True,
+    )
+    return bool(row and row.get("can_create_workspace"))
+
+
+def _user_is_member_of_workspace(user_email, workspace_id):
+    """
+    Return True if this user is a member of the workspace (any role).
+    Works with both tuple and dict rows.
+    """
+    row = run_query(
+        """
+        SELECT 1
+        FROM workspace_members
+        WHERE user_email = %s AND workspace_id = %s
+        LIMIT 1
+        """,
+        (user_email, workspace_id),
+        fetchone=True,
+    )
+    return bool(row)
+
+
+def _user_is_owner_of_workspace(user_email, workspace_id):
+    """
+    Return True if this user is an owner for this workspace.
+    """
+    row = run_query(
+        """
+        SELECT 1
+        FROM workspace_members
+        WHERE user_email = %s AND workspace_id = %s AND role = 'owner'
+        LIMIT 1
+        """,
+        (user_email, workspace_id),
+        fetchone=True,
+    )
+    return bool(row)
+def _user_is_member_of_workspace(user_email, workspace_id):
+    """
+    Return True if this user is a member of the workspace (any role).
+    Works with both tuple and dict rows.
+    """
+    row = run_query(
+        """
+        SELECT 1
+        FROM workspace_members
+        WHERE user_email = %s AND workspace_id = %s
+        LIMIT 1
+        """,
+        (user_email, workspace_id),
+        fetchone=True,
+    )
+    return bool(row)
+
+
+def _user_is_owner_of_workspace(user_email, workspace_id):
+    """
+    Return True if this user is an owner for this workspace.
+    """
+    row = run_query(
+        """
+        SELECT 1
+        FROM workspace_members
+        WHERE user_email = %s AND workspace_id = %s AND role = 'owner'
+        LIMIT 1
+        """,
+        (user_email, workspace_id),
+        fetchone=True,
+    )
+    return bool(row)
 
 
 # -----------------------------------------------------------------------------
@@ -427,6 +536,329 @@ def workspaces(request):
     )
 
 
+@csrf_exempt
+@require_access_token
+def workspace_updates_view(request):
+    """
+    GET    /api/workspace-updates/?workspace_id=1
+    POST   /api/workspace-updates/          (create new update)
+    PATCH  /api/workspace-updates/          (edit existing)
+    DELETE /api/workspace-updates/          (delete existing)
+
+    Permissions:
+    - List: any member of workspace (or admin)
+    - Create: any member (or you can restrict to owner/leader later)
+    - Edit/Delete: author OR workspace owner OR admin
+    """
+    user_email = getattr(request, "user_username", None)
+
+    # Helper: find user's latest workspace (same idea as channels view)
+    def _get_default_workspace_id():
+        row = run_query(
+            """
+            SELECT w.id
+            FROM workspaces w
+            JOIN workspace_members m ON m.workspace_id = w.id
+            WHERE m.user_email = %s
+            ORDER BY w.created_at DESC
+            LIMIT 1
+            """,
+            (user_email,),
+            fetchone=True,
+        )
+        return row["id"] if row else None
+
+    # Helper: find user's latest workspace (same idea as channels view)
+    def _get_default_workspace_id():
+        row = run_query(
+            """
+            SELECT w.id
+            FROM workspaces w
+            JOIN workspace_members m ON m.workspace_id = w.id
+            WHERE m.user_email = %s
+            ORDER BY w.created_at DESC
+            LIMIT 1
+            """,
+            (user_email,),
+            fetchone=True,
+        )
+        return row["id"] if row else None
+
+    # --------------------- GET: list updates ---------------------
+    if request.method == "GET":
+        ws_id = request.GET.get("workspace_id")
+
+        # if not given, pick latest workspace where user is a member
+        if not ws_id:
+            ws_id = _get_default_workspace_id()
+
+        if not ws_id:
+            return JsonResponse(
+                {"status": "error", "message": "No workspace found"},
+                status=404,
+            )
+
+        # permission: admin or member
+        if not _is_admin(user_email):
+            role = _get_workspace_role(user_email, ws_id)
+            if not role:
+                return JsonResponse(
+                    {"status": "error", "message": "Forbidden"},
+                    status=403,
+                )
+
+        rows = run_query(
+            """
+            SELECT
+                id,
+                workspace_id,
+                channel_id,
+                title,
+                body,
+                status,
+                update_type,
+                created_by,
+                created_at,
+                updated_at
+            FROM workspace_updates
+            WHERE workspace_id = %s
+            ORDER BY created_at DESC
+            """,
+            (ws_id,),
+            fetchall=True,
+        )
+
+        return JsonResponse(
+            {
+                "status": "success",
+                "workspace_id": ws_id,
+                "data": rows,
+            }
+        )
+    # For write ops we’ll parse body once
+    data = get_request_data(request)
+
+
+@csrf_exempt
+@require_access_token
+def workspace_updates_view(request):
+    user_email = getattr(request, "user_username", None)
+
+    # --------------------- GET: list updates ---------------------
+    if request.method == "GET":
+        ws_id = request.GET.get("workspace_id")
+
+        # if not passed, use latest workspace where user is member
+        if not ws_id:
+            ws_id = _get_default_workspace_id(user_email)
+
+        if not ws_id:
+            return JsonResponse(
+                {"status": "error", "message": "No workspace found"},
+                status=404,
+            )
+
+        # permission: admin or member of that workspace
+        if not _is_admin(user_email):
+            role = _get_workspace_role(user_email, ws_id)
+            if not role:
+                return JsonResponse(
+                    {"status": "error", "message": "Forbidden"},
+                    status=403,
+                )
+
+        rows = run_query(
+            """
+            SELECT
+                id,
+                workspace_id,
+                channel_id,
+                title,
+                body,
+                status,
+                update_type,
+                created_by,
+                created_at,
+                updated_at
+            FROM workspace_updates
+            WHERE workspace_id = %s
+            ORDER BY created_at DESC
+            """,
+            (ws_id,),
+            fetchall=True,
+        )
+
+        return JsonResponse({"status": "success", "data": rows})
+
+    # --------------------- POST / PATCH / DELETE ---------------------
+    # (these parts can stay exactly as I gave before)
+    data = get_request_data(request)
+
+    # ... POST / PATCH / DELETE logic unchanged ...
+
+    # --------------------- POST: create update ---------------------
+    if request.method == "POST":
+        ws_id = data.get("workspace_id")
+        title = (data.get("title") or "").strip()
+        body = (data.get("body") or "").strip()
+        status_val = (data.get("status") or "info").strip()
+        update_type = (data.get("update_type") or "general").strip()
+        channel_id = data.get("channel_id")  # optional
+
+        if not ws_id or not title or not body:
+            return JsonResponse(
+                {
+                    "status": "error",
+                    "message": "workspace_id, title and body are required",
+                },
+                status=400,
+            )
+
+        # permission: admin or member
+        if not _is_admin(user_email):
+            role = _get_workspace_role(user_email, ws_id)
+            if not role:
+                return JsonResponse(
+                    {"status": "error", "message": "Forbidden"},
+                    status=403,
+                )
+
+        run_query(
+            """
+            INSERT INTO workspace_updates (
+                workspace_id, channel_id, title, body, status, update_type, created_by
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (ws_id, channel_id, title, body, status_val, update_type, user_email),
+        )
+        update_id = get_last_insert_id()
+
+        # also push into activities feed
+        summary = f"{user_email} posted an update: {title}"
+        _insert_activity(
+            workspace_id=ws_id,
+            actor_email=user_email,
+            type_="workspace_update",
+            ref_id=update_id,
+            summary=summary,
+        )
+
+        return JsonResponse(
+            {"status": "success", "update_id": update_id},
+            status=201,
+        )
+
+    # --------------------- PATCH: edit update ---------------------
+    if request.method == "PATCH":
+        update_id = data.get("id")
+        if not update_id:
+            return JsonResponse(
+                {"status": "error", "message": "id required"},
+                status=400,
+            )
+
+        # load existing row
+        row = run_query(
+            """
+            SELECT
+                id, workspace_id, created_by, title, body, status, update_type
+            FROM workspace_updates
+            WHERE id = %s
+            """,
+            (update_id,),
+            fetchone=True,
+        )
+
+        if not row:
+            return JsonResponse(
+                {"status": "error", "message": "Update not found"},
+                status=404,
+            )
+
+        ws_id = row["workspace_id"]
+        created_by = row["created_by"]
+
+        # permission: author OR workspace owner OR admin
+        if not _is_admin(user_email):
+            role = _get_workspace_role(user_email, ws_id)
+            is_owner = role == "owner"
+            if user_email != created_by and not is_owner:
+                return JsonResponse(
+                    {"status": "error", "message": "Forbidden"},
+                    status=403,
+                )
+
+        # Prepare fields to update (partial update)
+        new_title = (data.get("title") or row["title"]).strip()
+        new_body = (data.get("body") or row["body"]).strip()
+        new_status = (data.get("status") or row["status"]).strip()
+        new_type = (data.get("update_type") or row["update_type"]).strip()
+
+        run_query(
+            """
+            UPDATE workspace_updates
+            SET title = %s,
+                body = %s,
+                status = %s,
+                update_type = %s
+            WHERE id = %s
+            """,
+            (new_title, new_body, new_status, new_type, update_id),
+        )
+
+        return JsonResponse({"status": "success", "message": "Update edited"})
+
+    # --------------------- DELETE: remove update ---------------------
+    if request.method == "DELETE":
+        update_id = data.get("id")
+        if not update_id:
+            return JsonResponse(
+                {"status": "error", "message": "id required"},
+                status=400,
+            )
+
+        # load existing row
+        row = run_query(
+            """
+            SELECT id, workspace_id, created_by
+            FROM workspace_updates
+            WHERE id = %s
+            """,
+            (update_id,),
+            fetchone=True,
+        )
+
+        if not row:
+            return JsonResponse(
+                {"status": "error", "message": "Update not found"},
+                status=404,
+            )
+
+        ws_id = row["workspace_id"]
+        created_by = row["created_by"]
+
+        # permission: author OR workspace owner OR admin
+        if not _is_admin(user_email):
+            role = _get_workspace_role(user_email, ws_id)
+            is_owner = role == "owner"
+            if user_email != created_by and not is_owner:
+                return JsonResponse(
+                    {"status": "error", "message": "Forbidden"},
+                    status=403,
+                )
+
+        run_query(
+            "DELETE FROM workspace_updates WHERE id = %s",
+            (update_id,),
+        )
+
+        return JsonResponse({"status": "success", "message": "Update deleted"})
+
+    return JsonResponse(
+        {"status": "error", "message": "Method not allowed"}, status=405
+    )
+
+
 # -----------------------------------------------------------------------------
 # PROTECTED: CHANNELS
 @csrf_exempt
@@ -564,144 +996,143 @@ def channels(request):
     )
 
 
+# @csrf_exempt
+# @require_access_token
+# def channels(request):
+#     user = getattr(request, "user_username", None)
+
+#     # Helper: find default workspace for this user
+#     def get_default_workspace_id():
+#         # If admin: pick the most recently created workspace globally
+#         if _is_admin(user):
+#             row = run_query(
+#                 """
+#                 SELECT id
+#                 FROM workspaces
+#                 ORDER BY created_at DESC
+#                 LIMIT 1
+#                 """,
+#                 fetchone=True,
+#             )
+#             return row["id"] if row else None
+
+#         # Non-admin: pick latest workspace where user is a member
+#         row = run_query(
+#             """
+#             SELECT w.id
+#             FROM workspaces w
+#             JOIN workspace_members m ON m.workspace_id = w.id
+#             WHERE m.user_email = %s
+#             ORDER BY w.created_at DESC
+#             LIMIT 1
+#             """,
+#             (user,),
+#             fetchone=True,
+#         )
+#         return row["id"] if row else None
+
+#     # Small helper: check if user can access given workspace
+#     def _user_can_access_workspace(ws_id: int) -> bool:
+#         if not ws_id:
+#             return False
+#         # Admin can always access
+#         if _is_admin(user):
+#             return True
+#         # Otherwise, must be a member of this workspace
+#         role = _get_workspace_role(user, ws_id)
+#         return role is not None
+
+#     # ---------------------------------------------------
+#     # CREATE CHANNEL
+#     # ---------------------------------------------------
+#     if request.method == "POST":
+#         data = get_request_data(request)
+#         ws_id = data.get("workspace_id") or get_default_workspace_id()
+#         name = (data.get("name") or "").strip()
+#         is_private = 1 if data.get("is_private") else 0
+
+#         if not ws_id:
+#             return JsonResponse(
+#                 {"status": "error", "message": "No workspace found"},
+#                 status=404,
+#             )
+
+#         # ✅ PERMISSION CHECK: must be admin or member of this workspace
+#         if not _user_can_access_workspace(ws_id):
+#             return JsonResponse(
+#                 {"status": "error", "message": "Forbidden"},
+#                 status=403,
+#             )
+
+#         if not name:
+#             return JsonResponse(
+#                 {"status": "error", "message": "Name required"},
+#                 status=400,
+#             )
+
+#         run_query(
+#             "INSERT INTO channels (workspace_id, name, is_private) VALUES (%s,%s,%s)",
+#             (ws_id, name, is_private),
+#         )
+#         ch_id = get_last_insert_id()
+
+#         return JsonResponse(
+#             {
+#                 "status": "success",
+#                 "workspace_id": ws_id,
+#                 "channel_id": ch_id,
+#             },
+#             status=201,
+#         )
+
+#     # ---------------------------------------------------
+#     # LIST CHANNELS FOR WORKSPACE
+#     # ---------------------------------------------------
+#     if request.method == "GET":
+#         ws_id = request.GET.get("workspace_id")
+#         if not ws_id:
+#             ws_id = get_default_workspace_id()
+
+#         if not ws_id:
+#             return JsonResponse(
+#                 {"status": "error", "message": "No workspace found"},
+#                 status=404,
+#             )
+
+#         # ✅ PERMISSION CHECK: must be admin or member of this workspace
+#         if not _user_can_access_workspace(ws_id):
+#             return JsonResponse(
+#                 {"status": "error", "message": "Forbidden"},
+#                 status=403,
+#             )
+
+#         rows = run_query(
+#             """
+#             SELECT id, name, is_private
+#             FROM channels
+#             WHERE workspace_id = %s
+#             ORDER BY id DESC
+#             """,
+#             (ws_id,),
+#             fetchall=True,
+#         )
+
+#         return JsonResponse(
+#             {
+#                 "status": "success",
+#                 "workspace_id": ws_id,
+#                 "data": rows,
+#             }
+#         )
+
+#     return JsonResponse(
+#         {"status": "error", "message": "Method not allowed"},
+#         status=405,
+#     )
+
 # -----------------------------------------------------------------------------
 # PROTECTED: MESSAGES
 # -----------------------------------------------------------------------------
-
-
-@csrf_exempt
-@require_access_token
-def channels(request):
-    user = getattr(request, "user_username", None)
-
-    # Helper: find default workspace for this user
-    def get_default_workspace_id():
-        # If admin: pick the most recently created workspace globally
-        if _is_admin(user):
-            row = run_query(
-                """
-                SELECT id
-                FROM workspaces
-                ORDER BY created_at DESC
-                LIMIT 1
-                """,
-                fetchone=True,
-            )
-            return row["id"] if row else None
-
-        # Non-admin: pick latest workspace where user is a member
-        row = run_query(
-            """
-            SELECT w.id
-            FROM workspaces w
-            JOIN workspace_members m ON m.workspace_id = w.id
-            WHERE m.user_email = %s
-            ORDER BY w.created_at DESC
-            LIMIT 1
-            """,
-            (user,),
-            fetchone=True,
-        )
-        return row["id"] if row else None
-
-    # Small helper: check if user can access given workspace
-    def _user_can_access_workspace(ws_id: int) -> bool:
-        if not ws_id:
-            return False
-        # Admin can always access
-        if _is_admin(user):
-            return True
-        # Otherwise, must be a member of this workspace
-        role = _get_workspace_role(user, ws_id)
-        return role is not None
-
-    # ---------------------------------------------------
-    # CREATE CHANNEL
-    # ---------------------------------------------------
-    if request.method == "POST":
-        data = get_request_data(request)
-        ws_id = data.get("workspace_id") or get_default_workspace_id()
-        name = (data.get("name") or "").strip()
-        is_private = 1 if data.get("is_private") else 0
-
-        if not ws_id:
-            return JsonResponse(
-                {"status": "error", "message": "No workspace found"},
-                status=404,
-            )
-
-        # ✅ PERMISSION CHECK: must be admin or member of this workspace
-        if not _user_can_access_workspace(ws_id):
-            return JsonResponse(
-                {"status": "error", "message": "Forbidden"},
-                status=403,
-            )
-
-        if not name:
-            return JsonResponse(
-                {"status": "error", "message": "Name required"},
-                status=400,
-            )
-
-        run_query(
-            "INSERT INTO channels (workspace_id, name, is_private) VALUES (%s,%s,%s)",
-            (ws_id, name, is_private),
-        )
-        ch_id = get_last_insert_id()
-
-        return JsonResponse(
-            {
-                "status": "success",
-                "workspace_id": ws_id,
-                "channel_id": ch_id,
-            },
-            status=201,
-        )
-
-    # ---------------------------------------------------
-    # LIST CHANNELS FOR WORKSPACE
-    # ---------------------------------------------------
-    if request.method == "GET":
-        ws_id = request.GET.get("workspace_id")
-        if not ws_id:
-            ws_id = get_default_workspace_id()
-
-        if not ws_id:
-            return JsonResponse(
-                {"status": "error", "message": "No workspace found"},
-                status=404,
-            )
-
-        # ✅ PERMISSION CHECK: must be admin or member of this workspace
-        if not _user_can_access_workspace(ws_id):
-            return JsonResponse(
-                {"status": "error", "message": "Forbidden"},
-                status=403,
-            )
-
-        rows = run_query(
-            """
-            SELECT id, name, is_private
-            FROM channels
-            WHERE workspace_id = %s
-            ORDER BY id DESC
-            """,
-            (ws_id,),
-            fetchall=True,
-        )
-
-        return JsonResponse(
-            {
-                "status": "success",
-                "workspace_id": ws_id,
-                "data": rows,
-            }
-        )
-
-    return JsonResponse(
-        {"status": "error", "message": "Method not allowed"},
-        status=405,
-    )
 
 
 @csrf_exempt
@@ -1082,11 +1513,9 @@ def workspace_info(request):
 
     return JsonResponse({"status": "success", "data": row})
 
-
 @csrf_exempt
 @require_access_token
 def task_create(request):
-
     user = getattr(request, "user_username", None)
 
     if request.method != "POST":
@@ -1102,7 +1531,15 @@ def task_create(request):
 
     if not ws_id or not title:
         return JsonResponse(
-            {"status": "error", "message": "Missing fields"}, status=400
+            {"status": "error", "message": "workspace_id and title are required"},
+            status=400,
+        )
+
+    # ✅ Permission: admin OR workspace member
+    if not _is_admin(user) and not _user_is_member_of_workspace(user, ws_id):
+        return JsonResponse(
+            {"status": "error", "message": "Forbidden"},
+            status=403,
         )
 
     run_query(
@@ -1115,8 +1552,17 @@ def task_create(request):
 
     task_id = get_last_insert_id()
 
-    return JsonResponse({"status": "success", "task_id": task_id}, status=201)
+    # 🔁 Log into activities
+    summary = f"{user} created task: {title}"
+    _insert_activity(
+        workspace_id=ws_id,
+        actor_email=user,
+        type_="task_created",
+        ref_id=task_id,
+        summary=summary,
+    )
 
+    return JsonResponse({"status": "success", "task_id": task_id}, status=201)
 
 @csrf_exempt
 @require_access_token
@@ -1134,6 +1580,49 @@ def task_update(request):
             {"status": "error", "message": "task_id required"}, status=400
         )
 
+    # Load existing task to check permissions
+    task_row = run_query(
+        """
+        SELECT id, workspace_id, created_by, assignee_email, title
+        FROM tasks
+        WHERE id = %s
+        """,
+        (task_id,),
+        fetchone=True,
+    )
+
+    if not task_row:
+        return JsonResponse(
+            {"status": "error", "message": "Task not found"},
+            status=404,
+        )
+
+    # handle tuple vs dict
+    if isinstance(task_row, dict):
+        ws_id = task_row["workspace_id"]
+        created_by = task_row["created_by"]
+        assignee_email = task_row.get("assignee_email")
+        title = task_row["title"]
+    else:
+        # assuming columns order: id, workspace_id, created_by, assignee_email, title
+        _, ws_id, created_by, assignee_email, title = task_row
+
+    # ✅ Permission:
+    #   - Admin OR
+    #   - Workspace owner OR
+    #   - Task creator OR
+    #   - Task assignee
+    if not _is_admin(user):
+        is_owner = _user_is_owner_of_workspace(user, ws_id)
+        is_creator = (created_by == user)
+        is_assignee = (assignee_email == user)
+
+        if not (is_owner or is_creator or is_assignee):
+            return JsonResponse(
+                {"status": "error", "message": "Forbidden"},
+                status=403,
+            )
+
     fields = []
     params = []
 
@@ -1150,6 +1639,16 @@ def task_update(request):
     params.append(task_id)
 
     run_query(f"UPDATE tasks SET {', '.join(fields)} WHERE id=%s", params)
+
+    # 🔁 Log into activities
+    summary = f"{user} updated task: {title} (#{task_id})"
+    _insert_activity(
+        workspace_id=ws_id,
+        actor_email=user,
+        type_="task_updated",
+        ref_id=task_id,
+        summary=summary,
+    )
 
     return JsonResponse({"status": "success", "updated": True})
 
@@ -1176,12 +1675,13 @@ def tasks(request):
             (user,),
             fetchone=True,
         )
-        return row["id"] if row else None
+        # row can be tuple or dict
+        if not row:
+            return None
+        return row["id"] if isinstance(row, dict) else row[0]
 
-    # check query param first
     ws_id = request.GET.get("workspace_id")
 
-    # fallback to auto-detect (same as channels API)
     if not ws_id:
         ws_id = get_default_workspace_id()
 
@@ -1189,6 +1689,13 @@ def tasks(request):
         return JsonResponse(
             {"status": "error", "message": "No workspace available for this user"},
             status=404,
+        )
+
+    # ✅ Permission: admin OR workspace member
+    if not _is_admin(user) and not _user_is_member_of_workspace(user, ws_id):
+        return JsonResponse(
+            {"status": "error", "message": "Forbidden"},
+            status=403,
         )
 
     rows = run_query(
@@ -1205,9 +1712,12 @@ def tasks(request):
     return JsonResponse({"status": "success", "workspace_id": ws_id, "data": rows})
 
 
+
 @csrf_exempt
 @require_access_token
 def task_delete(request):
+    user = getattr(request, "user_username", None)
+
     if request.method != "POST":
         return JsonResponse({"status": "error", "message": "POST required"}, status=405)
 
@@ -1217,7 +1727,59 @@ def task_delete(request):
             {"status": "error", "message": "task_id required"}, status=400
         )
 
+    # Load existing task to check permissions and get workspace + title
+    task_row = run_query(
+        """
+        SELECT id, workspace_id, created_by, assignee_email, title
+        FROM tasks
+        WHERE id = %s
+        """,
+        (task_id,),
+        fetchone=True,
+    )
+
+    if not task_row:
+        return JsonResponse(
+            {"status": "error", "message": "Task not found"},
+            status=404,
+        )
+
+    if isinstance(task_row, dict):
+        ws_id = task_row["workspace_id"]
+        created_by = task_row["created_by"]
+        assignee_email = task_row.get("assignee_email")
+        title = task_row["title"]
+    else:
+        _, ws_id, created_by, assignee_email, title = task_row
+
+    # ✅ Permission:
+    #   - Admin OR
+    #   - Workspace owner OR
+    #   - Task creator OR
+    #   - Task assignee
+    if not _is_admin(user):
+        is_owner = _user_is_owner_of_workspace(user, ws_id)
+        is_creator = (created_by == user)
+        is_assignee = (assignee_email == user)
+
+        if not (is_owner or is_creator or is_assignee):
+            return JsonResponse(
+                {"status": "error", "message": "Forbidden"},
+                status=403,
+            )
+
     run_query("DELETE FROM tasks WHERE id=%s", (task_id,))
+
+    # 🔁 Log into activities
+    summary = f"{user} deleted task: {title} (#{task_id})"
+    _insert_activity(
+        workspace_id=ws_id,
+        actor_email=user,
+        type_="task_deleted",
+        ref_id=task_id,
+        summary=summary,
+    )
+
     return JsonResponse({"status": "success", "deleted": True})
 
 
@@ -1538,9 +2100,6 @@ def github_integrations(request):
     )
 
 
-
-
-
 @csrf_exempt
 def github_webhook(request):
     """
@@ -1550,7 +2109,9 @@ def github_webhook(request):
     Uses github_repos.webhook_secret for HMAC.
     """
     if request.method != "POST":
-        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+        return JsonResponse(
+            {"status": "error", "message": "Method not allowed"}, status=405
+        )
 
     body = request.body
 
@@ -1600,7 +2161,9 @@ def github_webhook(request):
 
     if not hmac.compare_digest(sent_sig, expected_sig):
         logger.warning("[GH] Signature mismatch for repo %s", repo_full_name)
-        return JsonResponse({"status": "error", "message": "Invalid signature"}, status=403)
+        return JsonResponse(
+            {"status": "error", "message": "Invalid signature"}, status=403
+        )
 
     # --- event type ---
     event = request.META.get("HTTP_X_GITHUB_EVENT", "")
@@ -1611,7 +2174,7 @@ def github_webhook(request):
     logger.info("[GH] Event=%s repo=%s", event, repo_full_name)
 
     actor = None
-    ref_id = None      # we'll normalize later
+    ref_id = None  # we'll normalize later
     activity_type = None
     summary = None
 
@@ -1628,14 +2191,16 @@ def github_webhook(request):
         # Keep ref_id NULL for push so DB never complains.
         ref_id = None
         activity_type = "github_push"
-        summary = f"{pusher} pushed {commit_count} commit(s) to {branch} in {repo_full_name}"
+        summary = (
+            f"{pusher} pushed {commit_count} commit(s) to {branch} in {repo_full_name}"
+        )
 
     # ================== PULL REQUEST ==================
     elif event == "pull_request" and "pr" in mask:
         action = payload.get("action")
         pr = payload.get("pull_request") or {}
         title = pr.get("title")
-        number = pr.get("number")       # small integer
+        number = pr.get("number")  # small integer
         user = (pr.get("user") or {}).get("login") or "GitHub"
         merged = pr.get("merged", False)
 
@@ -1659,7 +2224,7 @@ def github_webhook(request):
         action = payload.get("action")
         issue = payload.get("issue") or {}
         title = issue.get("title")
-        number = issue.get("number")    # small integer
+        number = issue.get("number")  # small integer
         user = (issue.get("user") or {}).get("login") or "GitHub"
 
         actor = user
@@ -1697,7 +2262,9 @@ def github_webhook(request):
             """,
             (workspace_id, actor, activity_type, ref_id_db, summary),
         )
-        logger.info("[GH] Activity row created: ws=%s type=%s", workspace_id, activity_type)
+        logger.info(
+            "[GH] Activity row created: ws=%s type=%s", workspace_id, activity_type
+        )
     except Exception as e:
         logger.exception("[GH] Failed to insert activity: %s", e)
         return JsonResponse({"status": "error", "message": "DB error"}, status=500)

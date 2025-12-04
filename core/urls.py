@@ -13,7 +13,8 @@ urlpatterns = [
     path("workspaces/", views.workspaces),  # GET list / POST create workspace
     path("workspaces/", views.workspace_info),  # GET list / POST create workspace
     path("workspace-members/", views.workspace_members),
-    
+    path("workspace-updates/", views.workspace_updates_view),
+
     path("channels/", views.channels),  # GET list / POST create channel
     path("messages/", views.messages),  # GET list / POST create channel
     path("activities/", views.activities),
@@ -36,7 +37,6 @@ urlpatterns = [
     
     # GitHub integration management (auth required)
     path("github/integrations/", views.github_integrations),
-
     # GitHub webhook (public)
     path("github/webhook/", views.github_webhook),
 
