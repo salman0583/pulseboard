@@ -18,7 +18,8 @@ urlpatterns = [
     path("channels/", views.channels),  # GET list / POST create channel
     path("messages/", views.messages),  # GET list / POST create channel
     path("activities/", views.activities),
-    
+    path("notifications/", views.notifications),
+
     path("metrics/messages-per-day", views.metrics_messages_per_day),
     path("metrics/active-users", views.metrics_active_users),
     path("refresh/", views.refresh_endpoint),

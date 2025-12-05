@@ -4,77 +4,45 @@ import hashlib
 import logging
 import datetime
 import secrets
+import hmac
+
 from django.conf import settings
 from django.utils import timezone
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from httpcore import request
-import hmac
-import hashlib
-from django.views.decorators.http import require_POST
 
-
-def _handle_github_event(ws_id, repo_full_name, event, events_mask, payload):
-    raise NotImplementedError
-
+# Decorators
+from core.decorators import require_access_token
 
 # DB helpers
 from db import run_query, save_refresh_token, revoke_refresh_token, get_last_insert_id
 
-# JWT helpers
+# JWT / helper utilities
 from jwt_utils import (
+    _can_create_workspace,
+    _get_default_workspace_id,
     _get_workspace_role,
     _is_admin,
     _is_workspace_owner,
+    _user_is_member_of_workspace,
+    _user_is_owner_of_workspace,
+    _get_current_user_email,
+    _insert_activity,
+    get_request_data,
     decode_token,
     create_access_token,
     create_refresh_token,
     create_id_token,
+    is_refresh_revoked,
+    _insert_notification,
+    _get_workspace_for_channel,
+    _send_notification_email,
+    _username_to_email,
+    _process_message_mentions,
+    is_refresh_revoked,
+    _handle_github_event,
+    
 )
-
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-
-from db import run_query
-from core.decorators import require_access_token
-from jwt_utils import get_request_data
-
-
-def _insert_activity(workspace_id, actor_email, type_, ref_id, summary):
-    try:
-        run_query(
-            """
-            INSERT INTO activities (workspace_id, actor_email, type, ref_id, summary)
-            VALUES (%s, %s, %s, %s, %s)
-            """,
-            (workspace_id, actor_email, type_, ref_id, summary),
-        )
-    except Exception as e:
-        logger.exception(f"[Activity] Failed to insert: {e}")
-
-
-def _get_current_user_email(request):
-    return getattr(request, "user_username", None)
-
-
-def _get_default_workspace_id(user_email):
-    row = run_query(
-        """
-        SELECT w.id
-        FROM workspaces w
-        JOIN workspace_members m ON m.workspace_id = w.id
-        WHERE m.user_email = %s
-        ORDER BY w.created_at DESC
-        LIMIT 1
-        """,
-        (user_email,),
-        fetchone=True,
-    )
-    return row["id"] if row else None
-
-
-# Decorators
-from core.decorators import require_access_token
 
 logger = logging.getLogger("django")
 
@@ -89,158 +57,6 @@ COOKIE_KWARGS = {
     "samesite": "Lax" if DEV_MODE else "None",
     "path": "/",
 }
-
-# -----------------------------------------------------------------------------
-# HELPERS
-# -----------------------------------------------------------------------------
-
-
-def get_request_data(request):
-    """Safely read JSON or form data."""
-    try:
-        if request.content_type and "application/json" in request.content_type:
-            return json.loads(request.body.decode("utf-8"))
-        return request.POST
-    except Exception:
-        return {}
-
-
-def is_refresh_revoked(jti):
-    """Check DB to see if a refresh token jti has been revoked."""
-    try:
-        row = run_query(
-            "SELECT is_revoked FROM refresh_tokens WHERE jti=%s",
-            (jti,),
-            fetchone=True,
-        )
-        # If no record found, treat as revoked for safety
-        if not row:
-            return True
-        return bool(
-            row.get("is_revoked")
-            or row.get("is_revoked") == 1
-            or row.get("is_revoked") == True
-        )
-    except Exception:
-        logger.exception(f"[is_refresh_revoked] Error checking jti={jti}")
-        # Fail closed: consider token revoked on error
-        return True
-
-
-def _can_create_workspace(user_identifier):
-    """
-    User can create workspace if:
-    - is_admin = 1, OR
-    - can_create_workspace = 1
-
-    We match by username OR email.
-    Handles both tuple and dict rows from run_query.
-    """
-    logger.info(f"[_can_create_workspace] Checking for: {user_identifier}")
-    if not user_identifier:
-        return False
-
-    row = run_query(
-        """
-        SELECT is_admin, can_create_workspace
-        FROM users
-        WHERE username = %s OR email = %s
-        """,
-        (user_identifier, user_identifier),
-        fetchone=True,
-    )
-    logger.info(f"[_can_create_workspace] DB row: {row}")
-
-    if not row:
-        return False
-
-    if isinstance(row, dict):
-        is_admin = row.get("is_admin")
-        can_create = row.get("can_create_workspace")
-    else:
-        # assume tuple-like: (is_admin, can_create_workspace)
-        is_admin = row[0]
-        can_create = row[1] if len(row) > 1 else 0
-
-    return bool(is_admin or can_create)
-
-
-def _is_global_leader(user_email):
-    row = run_query(
-        "SELECT can_create_workspace FROM users WHERE email = %s",
-        (user_email,),
-        fetchone=True,
-    )
-    return bool(row and row.get("can_create_workspace"))
-
-
-def _user_is_member_of_workspace(user_email, workspace_id):
-    """
-    Return True if this user is a member of the workspace (any role).
-    Works with both tuple and dict rows.
-    """
-    row = run_query(
-        """
-        SELECT 1
-        FROM workspace_members
-        WHERE user_email = %s AND workspace_id = %s
-        LIMIT 1
-        """,
-        (user_email, workspace_id),
-        fetchone=True,
-    )
-    return bool(row)
-
-
-def _user_is_owner_of_workspace(user_email, workspace_id):
-    """
-    Return True if this user is an owner for this workspace.
-    """
-    row = run_query(
-        """
-        SELECT 1
-        FROM workspace_members
-        WHERE user_email = %s AND workspace_id = %s AND role = 'owner'
-        LIMIT 1
-        """,
-        (user_email, workspace_id),
-        fetchone=True,
-    )
-    return bool(row)
-def _user_is_member_of_workspace(user_email, workspace_id):
-    """
-    Return True if this user is a member of the workspace (any role).
-    Works with both tuple and dict rows.
-    """
-    row = run_query(
-        """
-        SELECT 1
-        FROM workspace_members
-        WHERE user_email = %s AND workspace_id = %s
-        LIMIT 1
-        """,
-        (user_email, workspace_id),
-        fetchone=True,
-    )
-    return bool(row)
-
-
-def _user_is_owner_of_workspace(user_email, workspace_id):
-    """
-    Return True if this user is an owner for this workspace.
-    """
-    row = run_query(
-        """
-        SELECT 1
-        FROM workspace_members
-        WHERE user_email = %s AND workspace_id = %s AND role = 'owner'
-        LIMIT 1
-        """,
-        (user_email, workspace_id),
-        fetchone=True,
-    )
-    return bool(row)
-
 
 # -----------------------------------------------------------------------------
 # REGISTER USER
@@ -1134,24 +950,53 @@ def channels(request):
 # PROTECTED: MESSAGES
 # -----------------------------------------------------------------------------
 
-
 @csrf_exempt
 @require_access_token
 def messages(request):
     user = getattr(request, "user_username", None)
 
+    # Helper: get workspace_id for a channel
+    def _get_channel_workspace_id(channel_id):
+        row = run_query(
+            "SELECT workspace_id FROM channels WHERE id = %s",
+            (channel_id,),
+            fetchone=True,
+        )
+        if not row:
+            return None
+        # handle dict or tuple
+        return row["workspace_id"] if isinstance(row, dict) else row[0]
+
+    # ------------------------------------------------------------------
+    # GET: list messages for a channel (only if user is member of workspace)
+    # ------------------------------------------------------------------
     if request.method == "GET":
         channel_id = request.GET.get("channel_id")
         if not channel_id:
             return JsonResponse(
-                {"status": "error", "message": "channel_id required"}, status=400
+                {"status": "error", "message": "channel_id required"},
+                status=400,
+            )
+
+        ws_id = _get_channel_workspace_id(channel_id)
+        if not ws_id:
+            return JsonResponse(
+                {"status": "error", "message": "Channel not found"},
+                status=404,
+            )
+
+        # Permission: admin or member of that workspace
+        if not _is_admin(user) and not _user_is_member_of_workspace(user, ws_id):
+            return JsonResponse(
+                {"status": "error", "message": "Forbidden"},
+                status=403,
             )
 
         rows = run_query(
             """
             SELECT id, sender_email, body, created_at
             FROM messages
-            WHERE channel_id=%s
+            WHERE channel_id = %s
             ORDER BY created_at ASC
             """,
             (channel_id,),
@@ -1160,6 +1005,9 @@ def messages(request):
 
         return JsonResponse({"status": "success", "data": rows})
 
+    # ------------------------------------------------------------------
+    # POST: send a message (and trigger mentions / task tags)
+    # ------------------------------------------------------------------
     elif request.method == "POST":
         data = get_request_data(request)
         channel_id = data.get("channel_id")
@@ -1167,9 +1015,25 @@ def messages(request):
 
         if not channel_id or not body:
             return JsonResponse(
-                {"status": "error", "message": "Missing fields"}, status=400
+                {"status": "error", "message": "Missing fields"},
+                status=400,
             )
 
+        ws_id = _get_channel_workspace_id(channel_id)
+        if not ws_id:
+            return JsonResponse(
+                {"status": "error", "message": "Channel not found"},
+                status=404,
+            )
+
+        # Permission: admin or member of that workspace
+        if not _is_admin(user) and not _user_is_member_of_workspace(user, ws_id):
+            return JsonResponse(
+                {"status": "error", "message": "Forbidden"},
+                status=403,
+            )
+
+        # Save message
         run_query(
             """
             INSERT INTO messages (channel_id, sender_email, body)
@@ -1177,15 +1041,26 @@ def messages(request):
             """,
             (channel_id, user, body),
         )
-
         msg_id = get_last_insert_id()
+
+        # 🔁 NEW: process @mentions and #task123 tags
+        # This will create notifications + optional emails
+        try:
+            _process_message_mentions(channel_id, msg_id, body, user)
+        except Exception as e:
+            # Don't break chat if notifications fail
+            logger.exception(f"[Messages] Failed to process mentions: {e}")
+
         return JsonResponse({"status": "success", "message_id": msg_id}, status=201)
 
+    # ------------------------------------------------------------------
+    # Unsupported methods
+    # ------------------------------------------------------------------
     else:
         return JsonResponse(
-            {"status": "error", "message": "Method not allowed"}, status=405
+            {"status": "error", "message": "Method not allowed"},
+            status=405,
         )
-
 
 # PROTECTED: ACTIVITIES
 # -----------------------------------------------------------------------------
@@ -2270,3 +2145,91 @@ def github_webhook(request):
         return JsonResponse({"status": "error", "message": "DB error"}, status=500)
 
     return JsonResponse({"status": "success"})
+
+
+
+
+
+@csrf_exempt
+@require_access_token
+def notifications(request):
+    user = getattr(request, "user_username", None)
+
+    # Map current identifier (username or email) to the email stored in notifications
+    # If user_username is already an email, this will still work.
+    row = run_query(
+        """
+        SELECT email
+        FROM users
+        WHERE username = %s OR email = %s
+        LIMIT 1
+        """,
+        (user, user),
+        fetchone=True,
+    )
+
+    if row:
+        if isinstance(row, dict):
+            user_email = row.get("email")
+        else:
+            user_email = row[0]
+    else:
+        # fallback: use whatever we have (in case you stored username in notifications)
+        user_email = user
+
+    # GET = list notifications (optionally only unread)
+    if request.method == "GET":
+        only_unread = request.GET.get("unread") == "1"
+
+        if only_unread:
+            rows = run_query(
+                """
+                SELECT id, workspace_id, type, ref_id, title, message, is_read, created_at
+                FROM notifications
+                WHERE user_email = %s AND is_read = 0
+                ORDER BY created_at DESC
+                """,
+                (user_email,),
+                fetchall=True,
+            )
+        else:
+            rows = run_query(
+                """
+                SELECT id, workspace_id, type, ref_id, title, message, is_read, created_at
+                FROM notifications
+                WHERE user_email = %s
+                ORDER BY created_at DESC
+                """,
+                (user_email,),
+                fetchall=True,
+            )
+
+        return JsonResponse({"status": "success", "data": rows})
+
+    # POST = mark as read / mark all as read
+    if request.method == "POST":
+        data = get_request_data(request)
+        notif_id = data.get("id")
+        mark_all = data.get("mark_all", False)
+
+        if mark_all:
+            run_query(
+                "UPDATE notifications SET is_read = 1 WHERE user_email = %s AND is_read = 0",
+                (user_email,),
+            )
+            return JsonResponse({"status": "success", "updated": "all"})
+
+        if not notif_id:
+            return JsonResponse(
+                {"status": "error", "message": "id or mark_all required"},
+                status=400,
+            )
+
+        # Ensure the notification belongs to this user
+        run_query(
+            "UPDATE notifications SET is_read = 1 WHERE id = %s AND user_email = %s",
+            (notif_id, user_email),
+        )
+        return JsonResponse({"status": "success", "updated": notif_id})
+
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)

@@ -106,12 +106,17 @@ CREATE TABLE IF NOT EXISTS presence (
 CREATE TABLE IF NOT EXISTS notifications (
   id INT PRIMARY KEY AUTO_INCREMENT,
   user_email VARCHAR(255) NOT NULL,
-  type VARCHAR(100) NOT NULL,
-  payload JSON DEFAULT NULL,
+  workspace_id INT,
+  type VARCHAR(50) NOT NULL,      -- e.g. 'mention_message', 'task_mentioned'
+  ref_id INT NULL,                -- e.g. message_id or task_id
+  title VARCHAR(255),
+  message TEXT,
   is_read TINYINT(1) DEFAULT 0,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  INDEX idx_notifications_user_time (user_email, created_at)
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX idx_notifications_user ON notifications(user_email, is_read);
+
 
 CREATE TABLE IF NOT EXISTS message_reads (
     id INT AUTO_INCREMENT PRIMARY KEY,
