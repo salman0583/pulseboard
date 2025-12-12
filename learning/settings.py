@@ -82,13 +82,14 @@ LOGGING = {
         "handlers": ["console", "file"],
         "level": "INFO",
     },
-    "loggers": {
-        "core": {
-            "handlers": ["console"],
-            "level": "DEBUG",
-            "propagate": False,
-        },
-    },
+    # "loggers": {
+    #     "core": {
+    #         "handlers": ["console"],
+    #         "level": "DEBUG",
+    #         "propagate": False,
+    #     },
+    # },
+    
 }
 
 # ================================

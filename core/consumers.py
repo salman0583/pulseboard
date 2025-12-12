@@ -6,12 +6,11 @@ from typing import Optional, Dict, Any
 
 from channels.generic.websocket import AsyncWebsocketConsumer
 from asgiref.sync import sync_to_async
-
+from db import get_last_insert_id, insert_and_get_id
 from db import run_query, is_refresh_revoked
-from jwt_utils import decode_token
+from jwt_utils import _resolve_to_email, _user_is_member_of_workspace, decode_token
 
 logger = logging.getLogger("django")
-
 
 # ==========================================================
 # 🔐 AUTH UTIL
@@ -145,6 +144,15 @@ def get_user_from_scope(scope: Dict[str, Any]) -> Optional[str]:
 # ==========================================================
 
 
+def _safe_dm_group_for_email(email: str) -> str:
+    """
+    Convert an email into a safe Channels group name.
+    Example: 'khan@example.com' -> 'dmuser_khan_example_com'
+    """
+    safe = (email or "").replace("@", "_at_").replace(".", "_")
+    return f"dmuser_{safe}"
+
+
 class BaseAuthedConsumer(AsyncWebsocketConsumer):
     """
     Shared logic:
@@ -220,7 +228,9 @@ class BaseAuthedConsumer(AsyncWebsocketConsumer):
                 self.__class__.__name__,
                 e,
             )
-            await self.send_error(str(e))
+            # if message is empty, at least send the exception type
+            msg = str(e) or e.__class__.__name__
+            await self.send_error(msg)
 
     async def handle_action(
         self,
@@ -249,7 +259,36 @@ class ChatConsumer(BaseAuthedConsumer):
       - { "action": "read_receipt", "message_id": 123 }
       - { "action": "sync_history", "channel_id": 1, "limit": 20 }
       - { "action": "ping" }
+
+      # Direct messages (DM)
+      - { "action": "dm_send", "workspace_id": 1, "other_user": "khan", "body": "hi" }
+      - { "action": "dm_edit", "id": 10, "body": "updated text" }
+      - { "action": "dm_delete", "id": 10 }
     """
+
+    # ---------- small internal helper ----------
+
+    async def _ensure_dm_identity(self) -> None:
+        """
+        Ensure we have self.user_email and self.dm_group_name and that
+        this connection is subscribed to the personal DM group.
+        """
+        if hasattr(self, "user_email"):
+            return
+
+        # self.user is set by BaseAuthedConsumer (username or email)
+        email = await sync_to_async(_resolve_to_email)(self.user)
+        if not email:
+            # fallback: use username as email-ish (not ideal but avoids crash)
+            email = self.user
+
+        self.user_email = email
+        self.dm_group_name = _safe_dm_group_for_email(self.user_email)
+
+        await self.channel_layer.group_add(self.dm_group_name, self.channel_name)
+        logger.info("[DM] %s joined DM group %s", self.user_email, self.dm_group_name)
+
+    # ---------- main action router ----------
 
     async def handle_action(
         self,
@@ -273,6 +312,15 @@ class ChatConsumer(BaseAuthedConsumer):
                     "ts": datetime.datetime.utcnow().isoformat() + "Z",
                 }
             )
+
+        # ----- DM actions -----
+        elif action == "dm_send":
+            await self._handle_dm_send(data)
+        elif action == "dm_edit":
+            await self._handle_dm_edit(data)
+        elif action == "dm_delete":
+            await self._handle_dm_delete(data)
+
         else:
             await self.send_error(
                 "Invalid action",
@@ -280,7 +328,7 @@ class ChatConsumer(BaseAuthedConsumer):
                 extra={"received": action},
             )
 
-    # ---------- internal helpers ----------
+    # ---------- existing helpers (channels) ----------
 
     async def _handle_join(self, data: Dict[str, Any]) -> None:
         try:
@@ -308,15 +356,14 @@ class ChatConsumer(BaseAuthedConsumer):
             return
 
         # store message
-        await sync_to_async(run_query)(
+         # store message
+   # store message and get id in ONE helper
+        msg_id = await sync_to_async(insert_and_get_id)(
             "INSERT INTO messages (channel_id, sender_email, body) VALUES (%s,%s,%s)",
             (self.channel_id, self.user, body),
         )
-        row = await sync_to_async(run_query)(
-            "SELECT LAST_INSERT_ID() AS id",
-            fetchone=True,
-        )
-        msg_id = row["id"]
+
+
 
         payload: Dict[str, Any] = {
             "event": "message",
@@ -351,17 +398,6 @@ class ChatConsumer(BaseAuthedConsumer):
         )
 
     async def _handle_read_receipt(self, data: Dict[str, Any]) -> None:
-        """
-        Minimal read-receipt support.
-
-        NOTE: Requires a table like:
-        CREATE TABLE message_reads (
-            message_id BIGINT,
-            reader_email VARCHAR(255),
-            read_at DATETIME,
-            PRIMARY KEY (message_id, reader_email)
-        );
-        """
         try:
             message_id = int(data.get("message_id"))
         except (TypeError, ValueError):
@@ -390,7 +426,6 @@ class ChatConsumer(BaseAuthedConsumer):
             "reader": self.user,
             "read_at": datetime.datetime.utcnow().isoformat() + "Z",
         }
-        # broadcast to channel so sender sees it
         if hasattr(self, "group_name"):
             await self.channel_layer.group_send(
                 self.group_name,
@@ -429,10 +464,11 @@ class ChatConsumer(BaseAuthedConsumer):
         messages = []
         for r in reversed(rows or []):
             created_at = r["created_at"]
-            if hasattr(created_at, "isoformat"):
-                created_str = created_at.isoformat()
-            else:
-                created_str = str(created_at)
+            created_str = (
+                created_at.isoformat()
+                if hasattr(created_at, "isoformat")
+                else str(created_at)
+            )
 
             messages.append(
                 {
@@ -452,6 +488,269 @@ class ChatConsumer(BaseAuthedConsumer):
             }
         )
 
+    # ---------- DM handlers ----------
+
+    async def _handle_dm_send(self, data: Dict[str, Any]) -> None:
+        """
+        { "action": "dm_send", "workspace_id": 1, "other_user": "khan", "body": "hi" }
+        """
+        await self._ensure_dm_identity()
+
+        ws_id = data.get("workspace_id")
+        other_identifier = data.get("other_user")
+        body = (data.get("body") or "").strip()
+
+        try:
+            ws_id = int(ws_id)
+        except (TypeError, ValueError):
+            ws_id = None
+
+        if not ws_id or not other_identifier or not body:
+            await self.send_json(
+                {
+                    "event": "dm_error",
+                    "message": "workspace_id, other_user and body are required",
+                }
+            )
+            return
+
+        sender_email = self.user_email
+        recipient_email = await sync_to_async(_resolve_to_email)(other_identifier)
+
+        if not recipient_email:
+            await self.send_json(
+                {
+                    "event": "dm_error",
+                    "message": "Could not resolve other_user email",
+                }
+            )
+            return
+
+        # Membership checks (strict private DM: no admin override)
+        sender_member = await sync_to_async(_user_is_member_of_workspace)(
+            sender_email, ws_id
+        )
+        if not sender_member:
+            await self.send_json(
+                {
+                    "event": "dm_error",
+                    "message": "Forbidden: sender not in workspace",
+                }
+            )
+            return
+
+        recipient_member = await sync_to_async(_user_is_member_of_workspace)(
+            recipient_email, ws_id
+        )
+        if not recipient_member:
+            await self.send_json(
+                {
+                    "event": "dm_error",
+                    "message": "Other user not in this workspace",
+                }
+            )
+            return
+    
+                # Insert message
+       # Insert message and get id in one call
+         # Insert message and get id in ONE helper
+        dm_id = await sync_to_async(insert_and_get_id)(
+            """
+            INSERT INTO dm_messages (workspace_id, sender_email, recipient_email, body)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (ws_id, sender_email, recipient_email, body),
+        )
+
+        logger.info(
+            "[DM_WS] Inserted dm_messages row: id=%s, ws_id=%s, sender=%s, recipient=%s",
+            dm_id,
+            ws_id,
+            sender_email,
+            recipient_email,
+        )
+
+        ts = datetime.datetime.utcnow().isoformat() + "Z"
+
+
+        payload: Dict[str, Any] = {
+            "event": "dm_message",
+            "id": dm_id,
+            "workspace_id": ws_id,
+            "sender": sender_email,
+            "recipient": recipient_email,
+            "body": body,
+            "is_edited": False,
+            "created_at": ts,
+        }
+
+        event = {"type": "dm.message", "data": payload}
+
+        sender_group = _safe_dm_group_for_email(sender_email)
+        recipient_group = _safe_dm_group_for_email(recipient_email)
+
+        await self.channel_layer.group_send(sender_group, event)
+        await self.channel_layer.group_send(recipient_group, event)
+
+    async def _handle_dm_edit(self, data: Dict[str, Any]) -> None:
+        """
+        { "action": "dm_edit", "id": 10, "body": "new text" }
+        """
+        await self._ensure_dm_identity()
+
+        dm_id = data.get("id")
+        new_body = (data.get("body") or "").strip()
+
+        try:
+            dm_id = int(dm_id)
+        except (TypeError, ValueError):
+            dm_id = None
+
+        if not dm_id or not new_body:
+            await self.send_json(
+                {
+                    "event": "dm_error",
+                    "message": "id and body are required for dm_edit",
+                }
+            )
+            return
+
+        current_email = self.user_email
+
+        row = await sync_to_async(run_query)(
+            """
+            SELECT id, workspace_id, sender_email, recipient_email, body
+            FROM dm_messages
+            WHERE id = %s
+            """,
+            (dm_id,),
+            fetchone=True,
+        )
+
+        if not row:
+            await self.send_json({"event": "dm_error", "message": "DM not found"})
+            return
+
+        if isinstance(row, dict):
+            ws_id = row["workspace_id"]
+            sender_email = row["sender_email"]
+            recipient_email = row["recipient_email"]
+        else:
+            _, ws_id, sender_email, recipient_email, _ = row
+
+        # Only sender can edit
+        if current_email != sender_email:
+            await self.send_json(
+                {
+                    "event": "dm_error",
+                    "message": "Forbidden: only sender can edit",
+                }
+            )
+            return
+
+        await sync_to_async(run_query)(
+            """
+            UPDATE dm_messages
+            SET body = %s, is_edited = 1
+            WHERE id = %s
+            """,
+            (new_body, dm_id),
+        )
+
+        ts = datetime.datetime.utcnow().isoformat() + "Z"
+
+        payload: Dict[str, Any] = {
+            "event": "dm_edit",
+            "id": dm_id,
+            "workspace_id": ws_id,
+            "sender": sender_email,
+            "recipient": recipient_email,
+            "body": new_body,
+            "is_edited": True,
+            "updated_at": ts,
+        }
+
+        event = {"type": "dm.edit", "data": payload}
+
+        sender_group = _safe_dm_group_for_email(sender_email)
+        recipient_group = _safe_dm_group_for_email(recipient_email)
+
+        await self.channel_layer.group_send(sender_group, event)
+        await self.channel_layer.group_send(recipient_group, event)
+
+    async def _handle_dm_delete(self, data: Dict[str, Any]) -> None:
+        """
+        { "action": "dm_delete", "id": 10 }
+        """
+        await self._ensure_dm_identity()
+
+        dm_id = data.get("id")
+        try:
+            dm_id = int(dm_id)
+        except (TypeError, ValueError):
+            dm_id = None
+
+        if not dm_id:
+            await self.send_json(
+                {
+                    "event": "dm_error",
+                    "message": "id required for dm_delete",
+                }
+            )
+            return
+
+        current_email = self.user_email
+
+        row = await sync_to_async(run_query)(
+            """
+            SELECT id, workspace_id, sender_email, recipient_email, body
+            FROM dm_messages
+            WHERE id = %s
+            """,
+            (dm_id,),
+            fetchone=True,
+        )
+
+        if not row:
+            await self.send_json({"event": "dm_error", "message": "DM not found"})
+            return
+
+        if isinstance(row, dict):
+            ws_id = row["workspace_id"]
+            sender_email = row["sender_email"]
+            recipient_email = row["recipient_email"]
+        else:
+            _, ws_id, sender_email, recipient_email, _ = row
+
+        # Only sender can delete
+        if current_email != sender_email:
+            await self.send_json(
+                {
+                    "event": "dm_error",
+                    "message": "Forbidden: only sender can delete",
+                }
+            )
+            return
+
+        await sync_to_async(run_query)(
+            "DELETE FROM dm_messages WHERE id = %s",
+            (dm_id,),
+        )
+
+        payload: Dict[str, Any] = {
+            "event": "dm_delete",
+            "id": dm_id,
+            "workspace_id": ws_id,
+        }
+
+        event = {"type": "dm.delete", "data": payload}
+
+        sender_group = _safe_dm_group_for_email(sender_email)
+        recipient_group = _safe_dm_group_for_email(recipient_email)
+
+        await self.channel_layer.group_send(sender_group, event)
+        await self.channel_layer.group_send(recipient_group, event)
+
     # ---------- group handlers ----------
 
     async def chat_message(self, event: Dict[str, Any]) -> None:
@@ -463,11 +762,24 @@ class ChatConsumer(BaseAuthedConsumer):
     async def chat_read_receipt(self, event: Dict[str, Any]) -> None:
         await self.send_json(event["data"])
 
+    async def dm_message(self, event: Dict[str, Any]) -> None:
+        await self.send_json(event["data"])
+
+    async def dm_edit(self, event: Dict[str, Any]) -> None:
+        await self.send_json(event["data"])
+
+    async def dm_delete(self, event: Dict[str, Any]) -> None:
+        await self.send_json(event["data"])
+
     async def disconnect(self, close_code: int) -> None:
         try:
             if hasattr(self, "group_name"):
                 await self.channel_layer.group_discard(
                     self.group_name, self.channel_name
+                )
+            if hasattr(self, "dm_group_name"):
+                await self.channel_layer.group_discard(
+                    self.dm_group_name, self.channel_name
                 )
             logger.info(
                 "[Chat] %s disconnected",
@@ -728,7 +1040,7 @@ class NotificationConsumer(AsyncWebsocketConsumer):
                     INSERT INTO notifications (user_email, type, payload)
                     VALUES (%s, %s, %s)
                     """,
-                    (self.user, notif_type, json.dumps(payload))
+                    (self.user, notif_type, json.dumps(payload)),
                 )
 
                 # Broadcast to user
@@ -740,18 +1052,20 @@ class NotificationConsumer(AsyncWebsocketConsumer):
                             "event": "notification",
                             "type": notif_type,
                             "payload": payload,
-                            "created_at": datetime.datetime.utcnow().isoformat() + "Z"
-                        }
-                    }
+                            "created_at": datetime.datetime.utcnow().isoformat() + "Z",
+                        },
+                    },
                 )
                 return
 
-            await self.send_json({
-                "event": "error",
-                "code": "invalid_action",
-                "message": "Invalid action",
-                "received": action
-            })
+            await self.send_json(
+                {
+                    "event": "error",
+                    "code": "invalid_action",
+                    "message": "Invalid action",
+                    "received": action,
+                }
+            )
 
         except Exception as e:
             logger.exception("[Notify] Error: %s", e)

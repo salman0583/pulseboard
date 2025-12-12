@@ -5,7 +5,7 @@ import logging
 import datetime
 import secrets
 import hmac
-
+from jwt_utils import _resolve_to_email, decode_token, revoke_refresh_token
 from django.conf import settings
 from django.utils import timezone
 from django.http import JsonResponse
@@ -41,7 +41,8 @@ from jwt_utils import (
     _process_message_mentions,
     is_refresh_revoked,
     _handle_github_event,
-    
+    _user_is_member_of_workspace,
+    _user_is_owner_of_workspace,
 )
 
 logger = logging.getLogger("django")
@@ -57,6 +58,7 @@ COOKIE_KWARGS = {
     "samesite": "Lax" if DEV_MODE else "None",
     "path": "/",
 }
+
 
 # -----------------------------------------------------------------------------
 # REGISTER USER
@@ -241,12 +243,19 @@ def verify_otp(request):
             )
 
         # OTP valid → generate tokens
+        # OTP valid → generate tokens
         username = user["username"]
 
-        access_token = create_access_token(username)
+        # First create refresh token -> get its jti (session id)
         refresh_token, jti, _ = create_refresh_token(username)
+
+        # Access token tied to same jti
+        access_token = create_access_token(username, jti=jti)
+
+        # ID token unchanged
         id_token = create_id_token(username, user["email"], user.get("full_name"))
 
+        # Save refresh session in DB
         r_payload = decode_token(refresh_token)
         save_refresh_token(jti, username, r_payload["exp"])
 
@@ -271,6 +280,7 @@ def verify_otp(request):
 
 
 @csrf_exempt
+@require_access_token
 def logout(request):
     if request.method != "POST":
         return JsonResponse({"status": "error", "message": "POST required"}, status=405)
@@ -950,6 +960,7 @@ def channels(request):
 # PROTECTED: MESSAGES
 # -----------------------------------------------------------------------------
 
+
 @csrf_exempt
 @require_access_token
 def messages(request):
@@ -1061,6 +1072,7 @@ def messages(request):
             {"status": "error", "message": "Method not allowed"},
             status=405,
         )
+
 
 # PROTECTED: ACTIVITIES
 # -----------------------------------------------------------------------------
@@ -1388,6 +1400,7 @@ def workspace_info(request):
 
     return JsonResponse({"status": "success", "data": row})
 
+
 @csrf_exempt
 @require_access_token
 def task_create(request):
@@ -1439,6 +1452,7 @@ def task_create(request):
 
     return JsonResponse({"status": "success", "task_id": task_id}, status=201)
 
+
 @csrf_exempt
 @require_access_token
 def task_update(request):
@@ -1489,8 +1503,8 @@ def task_update(request):
     #   - Task assignee
     if not _is_admin(user):
         is_owner = _user_is_owner_of_workspace(user, ws_id)
-        is_creator = (created_by == user)
-        is_assignee = (assignee_email == user)
+        is_creator = created_by == user
+        is_assignee = assignee_email == user
 
         if not (is_owner or is_creator or is_assignee):
             return JsonResponse(
@@ -1587,7 +1601,6 @@ def tasks(request):
     return JsonResponse({"status": "success", "workspace_id": ws_id, "data": rows})
 
 
-
 @csrf_exempt
 @require_access_token
 def task_delete(request):
@@ -1634,8 +1647,8 @@ def task_delete(request):
     #   - Task assignee
     if not _is_admin(user):
         is_owner = _user_is_owner_of_workspace(user, ws_id)
-        is_creator = (created_by == user)
-        is_assignee = (assignee_email == user)
+        is_creator = created_by == user
+        is_assignee = assignee_email == user
 
         if not (is_owner or is_creator or is_assignee):
             return JsonResponse(
@@ -2147,9 +2160,6 @@ def github_webhook(request):
     return JsonResponse({"status": "success"})
 
 
-
-
-
 @csrf_exempt
 @require_access_token
 def notifications(request):
@@ -2232,4 +2242,274 @@ def notifications(request):
         )
         return JsonResponse({"status": "success", "updated": notif_id})
 
-    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+    return JsonResponse(
+        {"status": "error", "message": "Method not allowed"}, status=405
+    )
+
+
+@csrf_exempt
+@require_access_token
+def dm_send_message(request):
+    user = getattr(request, "user_username", None)
+
+    if request.method != "POST":
+        return JsonResponse({"status": "error", "message": "POST required"}, status=405)
+
+    data = get_request_data(request)
+    ws_id = data.get("workspace_id")
+    other_user_identifier = data.get("other_user")  # username or email
+    body = (data.get("body") or "").strip()
+
+    if not ws_id or not other_user_identifier or not body:
+        return JsonResponse(
+            {
+                "status": "error",
+                "message": "workspace_id, other_user and body are required",
+            },
+            status=400,
+        )
+
+    # Resolve current user & other_user to email
+    sender_email = _resolve_to_email(user)
+    recipient_email = _resolve_to_email(other_user_identifier)
+
+    if not sender_email:
+        return JsonResponse(
+            {"status": "error", "message": "Could not resolve sender email"},
+            status=400,
+        )
+
+    if not recipient_email:
+        return JsonResponse(
+            {"status": "error", "message": "Could not resolve other_user email"},
+            status=400,
+        )
+
+    # Sender must be workspace member (Option B: no admin override)
+    if not _user_is_member_of_workspace(sender_email, ws_id):
+        return JsonResponse(
+            {"status": "error", "message": "Forbidden (sender not in workspace)"},
+            status=403,
+        )
+
+    # Other user must also be workspace member
+    if not _user_is_member_of_workspace(recipient_email, ws_id):
+        return JsonResponse(
+            {"status": "error", "message": "Other user not in this workspace"},
+            status=400,
+        )
+
+    run_query(
+        """
+        INSERT INTO dm_messages (workspace_id, sender_email, recipient_email, body)
+        VALUES (%s, %s, %s, %s)
+        """,
+        (ws_id, sender_email, recipient_email, body),
+    )
+    dm_id = get_last_insert_id()
+
+    # Optional notification
+    try:
+        title = "New direct message"
+        msg = f'{sender_email} sent you a direct message: "{body[:150]}"'
+        _insert_notification(
+            user_email=recipient_email,
+            workspace_id=ws_id,
+            type_="dm_message",
+            ref_id=dm_id,
+            title=title,
+            message=msg,
+        )
+    except Exception:
+        logger.exception("[DM] Failed to insert notification")
+
+    return JsonResponse({"status": "success", "dm_id": dm_id}, status=201)
+
+@csrf_exempt
+@require_access_token
+def dm_list_messages(request):
+    user = getattr(request, "user_username", None)
+
+    if request.method != "POST":
+        return JsonResponse({"status": "error", "message": "POST required"}, status=405)
+
+    data = get_request_data(request)
+    ws_id = data.get("workspace_id")
+    other_user_identifier = data.get("other_user")
+
+    if not ws_id or not other_user_identifier:
+        return JsonResponse(
+            {"status": "error", "message": "workspace_id and other_user are required"},
+            status=400,
+        )
+
+    current_email = _resolve_to_email(user)
+    other_email = _resolve_to_email(other_user_identifier)
+
+    if not current_email or not other_email:
+        return JsonResponse(
+            {"status": "error", "message": "Could not resolve user emails"},
+            status=400,
+        )
+
+    # Both must be workspace members
+    if not _user_is_member_of_workspace(current_email, ws_id):
+        return JsonResponse(
+            {"status": "error", "message": "Forbidden (not workspace member)"},
+            status=403,
+        )
+
+    if not _user_is_member_of_workspace(other_email, ws_id):
+        return JsonResponse(
+            {"status": "error", "message": "Other user not in this workspace"},
+            status=400,
+        )
+
+    rows = run_query(
+        """
+        SELECT id, workspace_id, sender_email, recipient_email, body,
+               is_edited, created_at, updated_at
+        FROM dm_messages
+        WHERE workspace_id = %s
+          AND (
+                (sender_email = %s AND recipient_email = %s)
+             OR (sender_email = %s AND recipient_email = %s)
+          )
+        ORDER BY created_at ASC
+        """,
+        (ws_id, current_email, other_email, other_email, current_email),
+        fetchall=True,
+    )
+
+    return JsonResponse({"status": "success", "data": rows})
+
+
+@csrf_exempt
+@require_access_token
+def dm_edit_message(request):
+    user = getattr(request, "user_username", None)
+
+    if request.method != "POST":
+        return JsonResponse({"status": "error", "message": "POST required"}, status=405)
+
+    data = get_request_data(request)
+    dm_id = data.get("id")
+    new_body = (data.get("body") or "").strip()
+
+    if not dm_id or not new_body:
+        return JsonResponse(
+            {"status": "error", "message": "id and body are required"},
+            status=400,
+        )
+
+    # Resolve current user to email (username -> email if needed)
+    current_email = _resolve_to_email(user)
+    if not current_email:
+        return JsonResponse(
+            {"status": "error", "message": "Could not resolve current user email"},
+            status=400,
+        )
+
+    # Load DM row
+    row = run_query(
+        """
+        SELECT id, workspace_id, sender_email, recipient_email, body
+        FROM dm_messages
+        WHERE id = %s
+        """,
+        (dm_id,),
+        fetchone=True,
+    )
+
+    if not row:
+        return JsonResponse(
+            {"status": "error", "message": "DM not found"},
+            status=404,
+        )
+
+    if isinstance(row, dict):
+        ws_id = row["workspace_id"]
+        sender_email = row["sender_email"]
+    else:
+        # assuming: id, workspace_id, sender_email, recipient_email, body
+        _, ws_id, sender_email, _, _ = row
+
+    # Only the sender can edit (Option B – no admin override)
+    if current_email != sender_email:
+        return JsonResponse(
+            {"status": "error", "message": "Forbidden (only sender can edit)"},
+            status=403,
+        )
+
+    # Update body + mark edited
+    run_query(
+        """
+        UPDATE dm_messages
+        SET body = %s, is_edited = 1
+        WHERE id = %s
+        """,
+        (new_body, dm_id),
+    )
+
+    return JsonResponse({"status": "success", "edited": True})
+
+
+@csrf_exempt
+@require_access_token
+def dm_delete_message(request):
+    user = getattr(request, "user_username", None)
+
+    if request.method != "POST":
+        return JsonResponse({"status": "error", "message": "POST required"}, status=405)
+
+    data = get_request_data(request)
+    dm_id = data.get("id")
+
+    if not dm_id:
+        return JsonResponse(
+            {"status": "error", "message": "id required"},
+            status=400,
+        )
+
+    # Resolve current user to email
+    current_email = _resolve_to_email(user)
+    if not current_email:
+        return JsonResponse(
+            {"status": "error", "message": "Could not resolve current user email"},
+            status=400,
+        )
+
+    # Load DM row
+    row = run_query(
+        """
+        SELECT id, workspace_id, sender_email, recipient_email, body
+        FROM dm_messages
+        WHERE id = %s
+        """,
+        (dm_id,),
+        fetchone=True,
+    )
+
+    if not row:
+        return JsonResponse(
+            {"status": "error", "message": "DM not found"},
+            status=404,
+        )
+
+    if isinstance(row, dict):
+        ws_id = row["workspace_id"]
+        sender_email = row["sender_email"]
+    else:
+        _, ws_id, sender_email, _, _ = row
+
+    # Only sender can delete (Option B)
+    if current_email != sender_email:
+        return JsonResponse(
+            {"status": "error", "message": "Forbidden (only sender can delete)"},
+            status=403,
+        )
+
+    # Hard delete
+    run_query("DELETE FROM dm_messages WHERE id = %s", (dm_id,))
+
+    return JsonResponse({"status": "success", "deleted": True})

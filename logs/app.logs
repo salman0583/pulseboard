@@ -1,46 +1,10 @@
-INFO 2025-12-05 11:40:23,068 views [OTP] OTP generated for salman
-INFO 2025-12-05 11:41:39,722 jwt_utils [_is_admin] Checking is_admin for identifier: salman
-INFO 2025-12-05 11:41:39,739 jwt_utils [_is_admin] DB row: (0,)
-INFO 2025-12-05 11:41:39,740 jwt_utils [_get_workspace_role] user_email=salman, workspace_id=1
-INFO 2025-12-05 11:41:39,742 jwt_utils [_get_workspace_role] DB row: ('owner',)
-WARNING 2025-12-05 11:41:39,753 log Bad Request: /api/workspace-members/
-INFO 2025-12-05 12:41:11,749 views [OTP] OTP generated for salman
-INFO 2025-12-05 12:42:48,581 jwt_utils [_is_admin] Checking is_admin for identifier: salman
-INFO 2025-12-05 12:42:48,595 jwt_utils [_is_admin] DB row: (0,)
-INFO 2025-12-05 12:42:48,596 jwt_utils [_get_workspace_role] user_email=salman, workspace_id=1
-INFO 2025-12-05 12:42:48,599 jwt_utils [_get_workspace_role] DB row: ('owner',)
-WARNING 2025-12-05 12:45:21,855 log Not Found: /api/messages/
-WARNING 2025-12-05 12:45:42,481 log Not Found: /api/messages/
-WARNING 2025-12-05 12:45:44,658 log Not Found: /api/messages/
-WARNING 2025-12-05 12:46:03,902 log Not Found: /api/messages/
-INFO 2025-12-05 12:46:28,618 jwt_utils [_is_admin] Checking is_admin for identifier: salman
-INFO 2025-12-05 12:46:28,625 jwt_utils [_is_admin] DB row: (0,)
-INFO 2025-12-05 12:51:08,833 jwt_utils [_is_admin] Checking is_admin for identifier: salman
-INFO 2025-12-05 12:51:08,841 jwt_utils [_is_admin] DB row: (0,)
-INFO 2025-12-05 12:51:35,704 jwt_utils [_is_admin] Checking is_admin for identifier: salman
-INFO 2025-12-05 12:51:35,710 jwt_utils [_is_admin] DB row: (0,)
-WARNING 2025-12-05 12:59:53,945 log Not Found: /api/notifications/
-WARNING 2025-12-05 13:00:00,149 log Not Found: /api/notifications/
-WARNING 2025-12-05 13:00:39,442 log Not Found: /api/notifications/
-WARNING 2025-12-05 13:00:40,506 log Not Found: /api/notifications/
-WARNING 2025-12-05 13:01:30,689 log Not Found: /api/notifications/
-INFO 2025-12-05 13:02:41,408 views [OTP] OTP generated for khan
-WARNING 2025-12-05 13:03:33,344 log Not Found: /api/verify-otp/
-WARNING 2025-12-05 13:03:52,543 log Not Found: /api/verify-otp/
-WARNING 2025-12-05 13:04:49,800 log Not Found: /api/notifications/
-WARNING 2025-12-05 13:05:05,549 log Not Found: /api/notifications/
-INFO 2025-12-05 13:05:54,761 autoreload C:\Users\SyedSalman\learning\core\urls.py changed, reloading.
-INFO 2025-12-05 13:05:55,642 autoreload Watching for file changes with StatReloader
-INFO 2025-12-05 13:05:56,965 autoreload C:\Users\SyedSalman\learning\core\urls.py changed, reloading.
-INFO 2025-12-05 13:05:57,478 autoreload Watching for file changes with StatReloader
-WARNING 2025-12-05 13:07:28,849 log Bad Request: /api/notifications/
-INFO 2025-12-05 13:14:16,125 middleware Access token expired, attempting refresh
-INFO 2025-12-05 13:14:16,147 middleware Rotated tokens for khan
-INFO 2025-12-05 13:22:48,648 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
-INFO 2025-12-05 13:22:49,551 autoreload Watching for file changes with StatReloader
-INFO 2025-12-05 13:24:46,657 middleware Access token expired, attempting refresh
-INFO 2025-12-05 13:24:46,706 middleware Rotated tokens for khan
-WARNING 2025-12-05 13:25:28,132 log Bad Request: /api/messages/
-INFO 2025-12-05 13:25:54,679 jwt_utils [_is_admin] Checking is_admin for identifier: khan
-INFO 2025-12-05 13:25:54,690 jwt_utils [_is_admin] DB row: (0,)
-WARNING 2025-12-05 13:25:54,694 log Forbidden: /api/messages/
+INFO 2025-12-12 18:29:19,282 consumers [Chat] khan disconnected
+INFO 2025-12-12 18:29:25,425 consumers [WSAuth] Authenticated WebSocket user (refresh token fallback): khan
+INFO 2025-12-12 18:29:25,427 consumers [ChatConsumer] khan connected via WS
+INFO 2025-12-12 18:29:31,655 consumers [DM] salmansyedofficial71@gmail.com joined DM group dmuser_salmansyedofficial71_at_gmail_com
+INFO 2025-12-12 18:30:30,663 autoreload C:\Users\SyedSalman\learning\db.py changed, reloading.
+INFO 2025-12-12 18:30:31,155 autoreload Watching for file changes with StatReloader
+INFO 2025-12-12 18:30:36,445 autoreload C:\Users\SyedSalman\learning\db.py changed, reloading.
+INFO 2025-12-12 18:30:36,929 autoreload Watching for file changes with StatReloader
+INFO 2025-12-12 18:56:05,339 autoreload C:\Users\SyedSalman\learning\learning\settings.py changed, reloading.
+INFO 2025-12-12 19:41:14,161 autoreload Watching for file changes with StatReloader

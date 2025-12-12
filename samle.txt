@@ -265,3 +265,13 @@
   ]
 }
 
+
+
+dm 
+
+{
+  "action": "dm_send",
+  "workspace_id": 3,
+  "other_user": "patanmuzzu@gmail.com",
+  "body": "Hi, this is a private DM"
+}

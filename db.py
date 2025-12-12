@@ -1,9 +1,11 @@
+import logging
 import MySQLdb
 import configparser
 import os
 from pathlib import Path
 from contextlib import closing
 from datetime import datetime, timezone
+logger = logging.getLogger("django")
 
 # ===========================
 # Load config.ini
@@ -120,3 +122,34 @@ def get_last_insert_id():
         fetchone=True,
     )
     return row["id"] if row and "id" in row else None
+
+
+from contextlib import closing
+import MySQLdb
+
+# ... your existing get_connection, run_query, etc ...
+
+from contextlib import closing
+import MySQLdb
+
+# ... your existing get_connection and run_query ...
+
+def insert_and_get_id(query, params=None):
+    """
+    Execute an INSERT and return the auto-increment id
+    using cursor.lastrowid on the SAME connection.
+    """
+    conn = get_connection()
+    try:
+        with closing(conn.cursor(MySQLdb.cursors.DictCursor)) as cursor:
+            cursor.execute(query, params or ())
+            last_id = cursor.lastrowid
+            print("🔎 insert_and_get_id: lastrowid =", last_id)
+            conn.commit()
+            return last_id
+    except Exception as e:
+        conn.rollback()
+        print("❌ DB Error (insert_and_get_id):", e)
+        raise
+    finally:
+        conn.close()

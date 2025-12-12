@@ -85,7 +85,11 @@ def create_otp_token(username: str):
 # -------------------------------------------------------------------------
 # ACCESS TOKEN
 # -------------------------------------------------------------------------
-def create_access_token(username):
+def create_access_token(username, jti=None):
+    """
+    Create an access token.
+    If jti is provided, it ties this access token to the same session as the refresh token.
+    """
     now = _now_utc()
     payload = {
         "sub": username,
@@ -93,6 +97,10 @@ def create_access_token(username):
         "iat": int(now.timestamp()),
         "exp": int((now + get_access_lifetime()).timestamp()),
     }
+
+    if jti is not None:
+        payload["jti"] = jti
+
     return jwt.encode(payload, get_jwt_secret(), algorithm=get_jwt_alg())
 
 
@@ -129,6 +137,49 @@ def create_id_token(username, email=None, full_name=None):
         "exp": int((now + get_id_lifetime()).timestamp()),
     }
     return jwt.encode(payload, get_jwt_secret(), algorithm=get_jwt_alg())
+
+# -------------------------------------------------------------------------
+# REFRESH TOKEN PERSISTENCE / REVOCATION
+# -------------------------------------------------------------------------
+def save_refresh_token(jti, username, exp_timestamp):
+    """
+    Store refresh token session in DB.
+    exp_timestamp is the JWT 'exp' (UNIX seconds).
+    """
+    expires_at = datetime.fromtimestamp(exp_timestamp, tz=timezone.utc)
+
+    run_query(
+        """
+        INSERT INTO refresh_tokens (jti, username, expires_at, is_revoked, created_at)
+        VALUES (%s, %s, %s, 0, SYSTIMESTAMP)
+        """,
+        (jti, username, expires_at),
+    )
+
+
+def revoke_refresh_token(jti):
+    """
+    Mark a refresh token / session as revoked.
+    """
+    run_query(
+        "UPDATE refresh_tokens SET is_revoked = 1 WHERE jti = %s",
+        (jti,),
+    )
+
+
+def is_refresh_token_revoked(jti) -> bool:
+    """
+    Return True if the session is revoked or not found.
+    """
+    row = run_query(
+        "SELECT is_revoked FROM refresh_tokens WHERE jti = %s",
+        (jti,),
+        fetchone=True,
+    )
+    if row is None:
+        # Unknown session -> treat as invalid
+        return True
+    return bool(row[0])
 
 
 # -------------------------------------------------------------------------
@@ -313,12 +364,15 @@ def _can_create_workspace(user_identifier):
 
     return bool(is_admin or can_create)
 
+def _user_is_member_of_workspace(user_identifier, workspace_id):
+    """
+    user_identifier can be username OR email.
+    We always resolve it to email before checking workspace_members.
+    """
+    email = _resolve_to_email(user_identifier)
+    if not email:
+        return False
 
-def _user_is_member_of_workspace(user_email, workspace_id):
-    """
-    Return True if this user is a member of the workspace (any role).
-    Works with both tuple and dict rows.
-    """
     row = run_query(
         """
         SELECT 1
@@ -326,16 +380,14 @@ def _user_is_member_of_workspace(user_email, workspace_id):
         WHERE user_email = %s AND workspace_id = %s
         LIMIT 1
         """,
-        (user_email, workspace_id),
+        (email, workspace_id),
         fetchone=True,
     )
     return bool(row)
 
 
+
 def _user_is_owner_of_workspace(user_email, workspace_id):
-    """
-    Return True if this user is an owner for this workspace.
-    """
     row = run_query(
         """
         SELECT 1
@@ -347,6 +399,39 @@ def _user_is_owner_of_workspace(user_email, workspace_id):
         fetchone=True,
     )
     return bool(row)
+
+
+def _resolve_to_email(identifier):
+    """
+    Takes either a username or an email and returns a canonical email string.
+
+    - If it already looks like an email (contains '@'), return as-is.
+    - Else, treat it as username and look up the email in users table.
+    """
+    if not identifier:
+        return None
+
+    identifier = str(identifier).strip()
+
+    # If it already looks like an email, just return it
+    if "@" in identifier:
+        return identifier
+
+    # Otherwise, treat as username -> find email
+    row = run_query(
+        "SELECT email FROM users WHERE username = %s",
+        (identifier,),
+        fetchone=True,
+    )
+
+    if not row:
+        return None
+
+    if isinstance(row, dict):
+        return row.get("email")
+    else:
+        # single-column tuple
+        return row[0]
 
 
 # -------------------------------------------------------------------------
@@ -592,3 +677,18 @@ def _process_message_mentions(channel_id, message_id, body, sender_email):
                 subject=title,
                 body=msg,
             )
+
+
+
+def _user_is_owner_of_workspace(user_email, workspace_id):
+    row = run_query(
+        """
+        SELECT 1
+        FROM workspace_members
+        WHERE user_email = %s AND workspace_id = %s AND role = 'owner'
+        LIMIT 1
+        """,
+        (user_email, workspace_id),
+        fetchone=True,
+    )
+    return bool(row)

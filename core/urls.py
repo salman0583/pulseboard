@@ -41,5 +41,9 @@ urlpatterns = [
     # GitHub webhook (public)
     path("github/webhook/", views.github_webhook),
 
-    
+    path("dm/send/", views.dm_send_message),
+    path("dm/messages/", views.dm_list_messages),
+    path("dm/edit/", views.dm_edit_message),
+    path("dm/delete/", views.dm_delete_message),
+
 ]
