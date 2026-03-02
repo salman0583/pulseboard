@@ -1,0 +1,158 @@
+INFO 2026-01-06 12:06:07,292 autoreload C:\Users\SyedSalman\learning\core\urls.py changed, reloading.
+INFO 2026-01-06 12:06:09,608 autoreload Watching for file changes with StatReloader
+INFO 2026-01-06 12:06:18,087 autoreload C:\Users\SyedSalman\learning\core\urls.py changed, reloading.
+INFO 2026-01-06 12:06:18,670 autoreload Watching for file changes with StatReloader
+INFO 2026-01-06 15:59:35,575 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-06 15:59:37,756 autoreload Watching for file changes with StatReloader
+INFO 2026-01-06 15:59:55,270 autoreload C:\Users\SyedSalman\learning\core\urls.py changed, reloading.
+INFO 2026-01-06 15:59:55,985 autoreload Watching for file changes with StatReloader
+INFO 2026-01-06 15:59:58,325 autoreload C:\Users\SyedSalman\learning\core\urls.py changed, reloading.
+INFO 2026-01-06 15:59:58,903 autoreload Watching for file changes with StatReloader
+INFO 2026-01-06 16:00:07,213 autoreload C:\Users\SyedSalman\learning\core\urls.py changed, reloading.
+INFO 2026-01-06 16:00:07,905 autoreload Watching for file changes with StatReloader
+INFO 2026-01-06 16:00:18,474 autoreload C:\Users\SyedSalman\learning\core\urls.py changed, reloading.
+INFO 2026-01-06 16:00:19,138 autoreload Watching for file changes with StatReloader
+INFO 2026-01-06 16:00:24,375 autoreload C:\Users\SyedSalman\learning\core\urls.py changed, reloading.
+INFO 2026-01-06 16:00:25,043 autoreload Watching for file changes with StatReloader
+INFO 2026-01-06 16:00:49,931 autoreload C:\Users\SyedSalman\learning\core\urls.py changed, reloading.
+INFO 2026-01-06 16:00:50,574 autoreload Watching for file changes with StatReloader
+INFO 2026-01-06 16:00:53,786 autoreload C:\Users\SyedSalman\learning\core\urls.py changed, reloading.
+INFO 2026-01-06 16:00:54,309 autoreload Watching for file changes with StatReloader
+INFO 2026-01-06 16:01:01,591 autoreload C:\Users\SyedSalman\learning\core\urls.py changed, reloading.
+INFO 2026-01-06 16:01:02,261 autoreload Watching for file changes with StatReloader
+INFO 2026-01-06 16:01:04,442 autoreload C:\Users\SyedSalman\learning\core\urls.py changed, reloading.
+INFO 2026-01-06 16:01:05,051 autoreload Watching for file changes with StatReloader
+INFO 2026-01-06 16:01:07,254 autoreload C:\Users\SyedSalman\learning\core\urls.py changed, reloading.
+INFO 2026-01-06 16:01:07,825 autoreload Watching for file changes with StatReloader
+INFO 2026-01-06 16:01:11,009 autoreload C:\Users\SyedSalman\learning\core\urls.py changed, reloading.
+INFO 2026-01-06 16:01:11,539 autoreload Watching for file changes with StatReloader
+INFO 2026-01-06 16:01:17,828 autoreload C:\Users\SyedSalman\learning\core\urls.py changed, reloading.
+INFO 2026-01-06 16:01:18,492 autoreload Watching for file changes with StatReloader
+INFO 2026-01-06 16:01:19,631 autoreload C:\Users\SyedSalman\learning\core\urls.py changed, reloading.
+INFO 2026-01-06 16:01:20,332 autoreload Watching for file changes with StatReloader
+WARNING 2026-01-06 16:02:11,061 log Bad Request: /api/project_story/
+ERROR 2026-01-06 16:03:27,625 views [Project Story] Error: (1054, "Unknown column 'event_type' in 'where clause'")
+Traceback (most recent call last):
+  File "C:\Users\SyedSalman\learning\core\views.py", line 2545, in project_story
+    github_pushes = run_query(
+  File "C:\Users\SyedSalman\learning\db.py", line 49, in run_query
+    cursor.execute(query, params or ())
+  File "C:\Users\SyedSalman\learning\env\lib\site-packages\MySQLdb\cursors.py", line 179, in execute
+    res = self._query(mogrified_query)
+  File "C:\Users\SyedSalman\learning\env\lib\site-packages\MySQLdb\cursors.py", line 330, in _query
+    db.query(q)
+  File "C:\Users\SyedSalman\learning\env\lib\site-packages\MySQLdb\connections.py", line 280, in query
+    _mysql.connection.query(self, query)
+MySQLdb.OperationalError: (1054, "Unknown column 'event_type' in 'where clause'")
+ERROR 2026-01-06 16:03:27,692 log Internal Server Error: /api/project_story/
+INFO 2026-01-06 16:43:25,176 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-06 16:43:26,085 autoreload Watching for file changes with StatReloader
+ERROR 2026-01-06 16:43:37,448 views [Project Story] Error: not enough arguments for format string
+Traceback (most recent call last):
+  File "C:\Users\SyedSalman\learning\env\lib\site-packages\MySQLdb\cursors.py", line 200, in _mogrify
+    query = query % args
+TypeError: not enough arguments for format string
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\SyedSalman\learning\core\views.py", line 2575, in project_story
+    tasks = run_query(
+  File "C:\Users\SyedSalman\learning\db.py", line 49, in run_query
+    cursor.execute(query, params or ())
+  File "C:\Users\SyedSalman\learning\env\lib\site-packages\MySQLdb\cursors.py", line 176, in execute
+    mogrified_query = self._mogrify(query, args)
+  File "C:\Users\SyedSalman\learning\env\lib\site-packages\MySQLdb\cursors.py", line 202, in _mogrify
+    raise ProgrammingError(str(m))
+MySQLdb.ProgrammingError: not enough arguments for format string
+ERROR 2026-01-06 16:43:37,454 log Internal Server Error: /api/project_story/
+INFO 2026-01-06 16:50:14,138 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-06 16:50:14,963 autoreload Watching for file changes with StatReloader
+INFO 2026-01-06 16:50:25,335 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-06 16:50:25,894 autoreload Watching for file changes with StatReloader
+INFO 2026-01-06 16:50:38,299 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-06 16:50:39,226 autoreload Watching for file changes with StatReloader
+INFO 2026-01-06 16:50:40,397 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-06 16:50:41,020 autoreload Watching for file changes with StatReloader
+INFO 2026-01-06 16:50:53,575 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-06 16:50:54,278 autoreload Watching for file changes with StatReloader
+INFO 2026-01-06 16:50:58,571 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-06 16:50:59,421 autoreload Watching for file changes with StatReloader
+INFO 2026-01-06 16:51:01,610 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-06 16:51:02,122 autoreload Watching for file changes with StatReloader
+INFO 2026-01-07 13:12:12,491 autoreload Watching for file changes with StatReloader
+INFO 2026-01-07 13:27:53,569 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:27:54,248 autoreload Watching for file changes with StatReloader
+INFO 2026-01-07 13:28:22,203 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:28:23,160 autoreload Watching for file changes with StatReloader
+ERROR 2026-01-07 13:28:26,333 views [Project Story] Error: unsupported format character ''' (0x27) at index 277
+Traceback (most recent call last):
+  File "C:\Users\SyedSalman\learning\core\views.py", line 2589, in project_story
+    tasks = run_query(
+  File "C:\Users\SyedSalman\learning\db.py", line 49, in run_query
+    cursor.execute(query, params or ())
+  File "C:\Users\SyedSalman\learning\env\lib\site-packages\MySQLdb\cursors.py", line 176, in execute
+    mogrified_query = self._mogrify(query, args)
+  File "C:\Users\SyedSalman\learning\env\lib\site-packages\MySQLdb\cursors.py", line 200, in _mogrify
+    query = query % args
+ValueError: unsupported format character ''' (0x27) at index 277
+ERROR 2026-01-07 13:28:26,378 log Internal Server Error: /api/project_story/
+INFO 2026-01-07 13:30:54,755 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:30:55,511 autoreload Watching for file changes with StatReloader
+INFO 2026-01-07 13:31:04,876 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:31:05,485 autoreload Watching for file changes with StatReloader
+INFO 2026-01-07 13:31:27,583 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:31:28,188 autoreload Watching for file changes with StatReloader
+INFO 2026-01-07 13:31:30,544 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:31:31,298 autoreload Watching for file changes with StatReloader
+INFO 2026-01-07 13:31:56,336 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:31:57,021 autoreload Watching for file changes with StatReloader
+INFO 2026-01-07 13:32:05,517 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:32:06,233 autoreload Watching for file changes with StatReloader
+INFO 2026-01-07 13:34:50,524 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:34:51,369 autoreload Watching for file changes with StatReloader
+INFO 2026-01-07 13:34:52,711 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:34:53,218 autoreload Watching for file changes with StatReloader
+INFO 2026-01-07 13:34:59,602 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:35:00,379 autoreload Watching for file changes with StatReloader
+INFO 2026-01-07 13:35:11,955 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:35:12,601 autoreload Watching for file changes with StatReloader
+ERROR 2026-01-07 13:35:22,633 views [Project Story] Error: unsupported format character ''' (0x27) at index 346
+Traceback (most recent call last):
+  File "C:\Users\SyedSalman\learning\core\views.py", line 2592, in project_story
+    tasks = run_query(
+  File "C:\Users\SyedSalman\learning\db.py", line 49, in run_query
+    cursor.execute(query, params or ())
+  File "C:\Users\SyedSalman\learning\env\lib\site-packages\MySQLdb\cursors.py", line 176, in execute
+    mogrified_query = self._mogrify(query, args)
+  File "C:\Users\SyedSalman\learning\env\lib\site-packages\MySQLdb\cursors.py", line 200, in _mogrify
+    query = query % args
+ValueError: unsupported format character ''' (0x27) at index 346
+ERROR 2026-01-07 13:35:22,638 log Internal Server Error: /api/project_story/
+INFO 2026-01-07 13:39:59,602 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:40:00,440 autoreload Watching for file changes with StatReloader
+INFO 2026-01-07 13:40:02,881 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:40:03,376 autoreload Watching for file changes with StatReloader
+INFO 2026-01-07 13:40:05,683 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:40:06,386 autoreload Watching for file changes with StatReloader
+INFO 2026-01-07 13:44:32,997 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:44:33,601 autoreload Watching for file changes with StatReloader
+INFO 2026-01-07 13:45:48,814 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:45:49,380 autoreload Watching for file changes with StatReloader
+ERROR 2026-01-07 13:45:54,727 views [Project Story] Error: module 'datetime' has no attribute 'utcnow'
+Traceback (most recent call last):
+  File "C:\Users\SyedSalman\learning\core\views.py", line 2559, in project_story
+    end_dt = datetime.utcnow()
+AttributeError: module 'datetime' has no attribute 'utcnow'
+ERROR 2026-01-07 13:45:54,733 log Internal Server Error: /api/project_story/
+INFO 2026-01-07 13:46:05,274 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:46:05,841 autoreload Watching for file changes with StatReloader
+INFO 2026-01-07 13:46:09,159 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:46:09,847 autoreload Watching for file changes with StatReloader
+INFO 2026-01-07 13:47:02,548 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:47:03,257 autoreload Watching for file changes with StatReloader
+INFO 2026-01-07 13:47:10,713 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:47:11,274 autoreload Watching for file changes with StatReloader
+INFO 2026-01-07 13:51:15,262 autoreload C:\Users\SyedSalman\learning\core\views.py changed, reloading.
+INFO 2026-01-07 13:51:15,837 autoreload Watching for file changes with StatReloader
+INFO 2026-01-07 19:21:35,969 autoreload Watching for file changes with StatReloader
