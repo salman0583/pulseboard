@@ -211,3 +211,4 @@ config.ini
 .env
 __pycache__/
 *.pyc
+logs/
