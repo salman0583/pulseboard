@@ -23,7 +23,10 @@ SECRET_KEY = os.environ.get("SECRET_KEY")
 
 DEBUG = os.environ.get("DEBUG", "False") == "False"
 
-ALLOWED_HOSTS = os.environ.get( "ALLOWED_HOSTS","127.0.0.1,localhost,pulseboard-uik0.onrender.com").split(",")
+ALLOWED_HOSTS = os.environ.get(
+    "ALLOWED_HOSTS",
+    "127.0.0.1,localhost,pulseboard-backend.onrender.com"
+).split(",")
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 # ======================================================
 # OTP CONFIG
