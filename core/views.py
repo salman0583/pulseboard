@@ -668,10 +668,12 @@ def workspace_members_view(request, workspace_id):
                 (
                     admin_email,
                     "workspace_member_joined",
-                    json.dumps({
-                        "title": "New Member Joined",
-                        "message": f"{target_email} joined workspace",
-                    }),
+                    json.dumps(
+                        {
+                            "title": "New Member Joined",
+                            "message": f"{target_email} joined workspace",
+                        }
+                    ),
                 ),
                 return_last_id=True,
             )
@@ -748,10 +750,12 @@ def workspace_members_view(request, workspace_id):
                 (
                     admin_email,
                     "workspace_member_removed",
-                    json.dumps({
-                        "title": "Member Removed",
-                        "message": f"{target_email} was removed",
-                    }),
+                    json.dumps(
+                        {
+                            "title": "Member Removed",
+                            "message": f"{target_email} was removed",
+                        }
+                    ),
                 ),
                 return_last_id=True,
             )
@@ -773,7 +777,6 @@ def workspace_members_view(request, workspace_id):
         return JsonResponse({"status": "success", "message": "Member removed"})
 
     return JsonResponse({"message": "Method not allowed"}, status=405)
-
 
 
 @csrf_exempt
@@ -1532,6 +1535,7 @@ def task_create(request):
 
     return JsonResponse({"status": "success", "task_id": task_id}, status=201)
 
+
 @csrf_exempt
 @require_access_token
 def task_update(request):
@@ -1638,7 +1642,7 @@ def task_update(request):
         )
 
     # CASE 2: task updated (same assignee) → notify assignee
-# CASE 3: task marked completed → notify creator
+    # CASE 3: task marked completed → notify creator
     if data.get("status") == "completed" and created_by != user:
         notif_id = run_query(
             """
@@ -2099,13 +2103,6 @@ def account(request):
 #     )
 
 
-
-
-
-
-
-
-
 @csrf_exempt
 def github_webhook(request):
 
@@ -2125,7 +2122,9 @@ def github_webhook(request):
     signature_header = request.META.get("HTTP_X_HUB_SIGNATURE_256")
 
     if not body or not event or not delivery_id:
-        print(f"⚠️ Ignored: Not a valid GitHub webhook call. event={event}, delivery_id={delivery_id}, body_len={len(body) if body else 0}")
+        print(
+            f"⚠️ Ignored: Not a valid GitHub webhook call. event={event}, delivery_id={delivery_id}, body_len={len(body) if body else 0}"
+        )
         return JsonResponse({"status": "ignored", "reason": "missing_headers_or_body"})
 
     print("\n==============================")
@@ -2155,13 +2154,19 @@ def github_webhook(request):
     # -------------------------------
     repository = payload.get("repository")
     if not repository:
-        print(f"⚠️ Ignored: No repository object in payload. payload_keys={list(payload.keys())}")
+        print(
+            f"⚠️ Ignored: No repository object in payload. payload_keys={list(payload.keys())}"
+        )
         return JsonResponse({"status": "ignored", "reason": "no_repository_object"})
 
     repo_full_name = repository.get("full_name")
     if not repo_full_name:
-        print(f"⚠️ Ignored: repository.full_name missing. repo_keys={list(repository.keys())}")
-        return JsonResponse({"status": "ignored", "reason": "repository_full_name_missing"})
+        print(
+            f"⚠️ Ignored: repository.full_name missing. repo_keys={list(repository.keys())}"
+        )
+        return JsonResponse(
+            {"status": "ignored", "reason": "repository_full_name_missing"}
+        )
 
     print(f"🔍 Repository Identifed: {repo_full_name}")
 
@@ -2195,19 +2200,22 @@ def github_webhook(request):
     for row in integrations:
         secret = row["webhook_secret"] or settings.GITHUB_WEBHOOK_SECRET
         computed = hmac.new(
-            secret.encode(),
-            msg=body,
-            digestmod=hashlib.sha256
+            secret.encode(), msg=body, digestmod=hashlib.sha256
         ).hexdigest()
 
         if hmac.compare_digest(received_signature, computed):
             # Normalizing events_mask (e.g., 'pr' -> 'pull_request')
-            mask_raw = [e.strip().lower() for e in (row["events_mask"] or "").split(",")]
+            mask_raw = [
+                e.strip().lower() for e in (row["events_mask"] or "").split(",")
+            ]
             allowed_events = set()
             for m in mask_raw:
-                if m == "pr": allowed_events.add("pull_request")
-                elif m == "issue": allowed_events.add("issues")
-                else: allowed_events.add(m)
+                if m == "pr":
+                    allowed_events.add("pull_request")
+                elif m == "issue":
+                    allowed_events.add("issues")
+                else:
+                    allowed_events.add(m)
 
             if event in allowed_events:
                 valid_integrations.append(row)
@@ -2223,7 +2231,9 @@ def github_webhook(request):
     # -------------------------------
     for row in integrations:
         workspace_id = row["workspace_id"]
-        _handle_github_event(workspace_id, repo_full_name, event, payload, delivery_id=delivery_id)
+        _handle_github_event(
+            workspace_id, repo_full_name, event, payload, delivery_id=delivery_id
+        )
 
         print("✅ Event stored for workspace:", workspace_id)
 
@@ -2773,8 +2783,8 @@ def my_workspaces(request):
     return JsonResponse({"status": "success", "data": rows})
 
 
+# admin stats
 
-#admin stats
 
 @csrf_exempt
 @require_access_token
@@ -2784,10 +2794,7 @@ def admin_stats(request):
     if not _is_admin(actor):
         return JsonResponse({"message": "Forbidden"}, status=403)
 
-    users = run_query(
-        "SELECT COUNT(*) AS c FROM users",
-        fetchone=True
-    )["c"]
+    users = run_query("SELECT COUNT(*) AS c FROM users", fetchone=True)["c"]
 
     active_users = run_query(
         """
@@ -2796,31 +2803,27 @@ def admin_stats(request):
         WHERE status IN ('online', 'idle')
           AND last_seen >= DATE_SUB(NOW(), INTERVAL 15 MINUTE)
         """,
-        fetchone=True
+        fetchone=True,
     )["c"]
 
     admins = run_query(
-        "SELECT COUNT(*) AS c FROM users WHERE is_admin = 1",
-        fetchone=True
+        "SELECT COUNT(*) AS c FROM users WHERE is_admin = 1", fetchone=True
     )["c"]
 
-    workspaces = run_query(
-        "SELECT COUNT(*) AS c FROM workspaces",
-        fetchone=True
-    )["c"]
+    workspaces = run_query("SELECT COUNT(*) AS c FROM workspaces", fetchone=True)["c"]
 
-    channels = run_query(
-        "SELECT COUNT(*) AS c FROM channels",
-        fetchone=True
-    )["c"]
+    channels = run_query("SELECT COUNT(*) AS c FROM channels", fetchone=True)["c"]
 
-    return JsonResponse({
-        "users": users,
-        "active_users": active_users,
-        "admins": admins,
-        "workspaces": workspaces,
-        "channels": channels,
-    })
+    return JsonResponse(
+        {
+            "users": users,
+            "active_users": active_users,
+            "admins": admins,
+            "workspaces": workspaces,
+            "channels": channels,
+        }
+    )
+
 
 @csrf_exempt
 @require_access_token
@@ -2943,10 +2946,11 @@ def admin_workspace_channels(request, workspace_id):
         ORDER BY c.created_at ASC
         """,
         (workspace_id,),
-        fetchall=True
+        fetchall=True,
     )
 
     return JsonResponse(rows, safe=False)
+
 
 @csrf_exempt
 @require_access_token
@@ -2979,6 +2983,7 @@ def admin_user_workspaces(request, user_id):
 
     return JsonResponse(rows, safe=False)
 
+
 @csrf_exempt
 @require_access_token
 def workspace_overview(request, workspace_id):
@@ -2990,21 +2995,22 @@ def workspace_overview(request, workspace_id):
     members = run_query(
         "SELECT COUNT(*) AS c FROM workspace_members WHERE workspace_id=%s",
         (workspace_id,),
-        fetchone=True
+        fetchone=True,
     )["c"]
 
     channels = run_query(
         "SELECT COUNT(*) AS c FROM channels WHERE workspace_id=%s",
         (workspace_id,),
-        fetchone=True
+        fetchone=True,
     )["c"]
 
-    return JsonResponse({
-        "workspace_id": workspace_id,
-        "members": members,
-        "channels": channels,
-    })
-
+    return JsonResponse(
+        {
+            "workspace_id": workspace_id,
+            "members": members,
+            "channels": channels,
+        }
+    )
 
 
 @csrf_exempt
@@ -3031,7 +3037,6 @@ def admin_list_users(request):
     )
 
     return JsonResponse({"status": "success", "data": rows})
-
 
 
 @csrf_exempt
