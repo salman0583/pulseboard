@@ -1,7 +1,9 @@
 # core/views.py
+import email
 import json
 import hashlib
 import logging
+import opcode
 import secrets
 import hmac
 
@@ -218,21 +220,25 @@ def request_otp(request):
     # =====================================================
     # 🚀 PRODUCTION → send email
     # =====================================================
+# =====================================================
+# 🚀 PRODUCTION → send email using RESEND
+# =====================================================
     try:
-        from django.core.mail import send_mail
+        import resend
+        import os
 
-        send_mail(
-            "Your OTP Code",
-            f"Your OTP: {otp_code}",
-            settings.EMAIL_HOST_USER,
-            [email],
-        )
+        resend.api_key = os.environ.get("RESEND_API_KEY")
+
+        resend.Emails.send({
+            "from": "PulseBoard <onboarding@resend.dev>",
+            "to": [email],
+            "subject": "Your OTP Code",
+            "html": f"<strong>Your OTP is {opcode}</strong>"
+        })
+
     except Exception as e:
         logger.exception(f"[OTP EMAIL] {e}")
         return JsonResponse({"status": "error", "message": "Email failed"}, status=500)
-
-    return JsonResponse({"status": "success", "message": f"OTP sent to {email}"})
-
 
 # -----------------------------------------------------------------------------
 # VERIFY OTP → LOGIN
