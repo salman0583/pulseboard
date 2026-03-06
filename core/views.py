@@ -225,22 +225,27 @@ def request_otp(request):
 # =====================================================
     try:
         import resend
-        import os
-
-        resend.api_key = os.environ.get("RESEND_API_KEY")
+        resend.api_key = settings.RESEND_API_KEY
 
         resend.Emails.send({
             "from": "PulseBoard <onboarding@resend.dev>",
             "to": [email],
             "subject": "Your OTP Code",
-            "html": f"<strong>Your OTP is {opcode}</strong>"
+            "html": f"<strong>Your OTP is {otp_code}</strong>",
         })
 
     except Exception as e:
-        logger.exception(f"[OTP EMAIL] {e}")
-        return JsonResponse({"status": "error", "message": "Email failed"}, status=500)
+        logger.exception(f"[OTP EMAIL ERROR] {e}")
+        return JsonResponse(
+            {"status": "error", "message": "Email failed"},
+            status=500,
+        )
 
-# -----------------------------------------------------------------------------
+    return JsonResponse({
+        "status": "success",
+        "message": "OTP sent successfully"
+    })
+    # -----------------------------------------------------------------------------
 # VERIFY OTP → LOGIN
 # -----------------------------------------------------------------------------
 from django.conf import settings
