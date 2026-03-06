@@ -2,7 +2,7 @@
 import logging
 from django.http import JsonResponse
 from django.conf import settings
-from jwt import ExpiredSignatureError, InvalidTokenError
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from jwt_utils import decode_token
 
 from jwt_utils import (

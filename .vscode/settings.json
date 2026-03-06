@@ -2,5 +2,6 @@
   "python.analysis.extraPaths": [
     "./core"
   ],
-  "python.terminal.useEnvFile": true
+  "python.terminal.useEnvFile": true,
+  "python-envs.defaultEnvManager": "ms-python.python:system"
 }
