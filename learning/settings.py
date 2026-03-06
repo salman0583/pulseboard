@@ -7,7 +7,9 @@ from pathlib import Path
 import os
 import datetime
 from dotenv import load_dotenv
+import os
 
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 # ======================================================
 # LOAD ENVIRONMENT
 # ======================================================
@@ -174,7 +176,13 @@ EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD")
+# ==================================
+# EMAIL / RESEND
+# ==================================
 
+import os
+
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 # ======================================================
 # STATIC
 # ======================================================
