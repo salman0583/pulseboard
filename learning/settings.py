@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import datetime
 from dotenv import load_dotenv
-
+REDIS_URL = os.getenv("REDIS_URL")
 
 # ======================================================
 # LOAD ENVIRONMENT
