@@ -34,9 +34,12 @@ from django.views.decorators.csrf import csrf_exempt
 from core.decorators import require_access_token
 from django.conf import settings
 
+
 # DB helpers
 from db import run_query, save_refresh_token, revoke_refresh_token, get_last_insert_id
-
+import resend
+from django.conf import settings
+resend.api_key = settings.RESEND_API_KEY
 # JWT / helper utilities
 from jwt_utils import (
     _can_create_workspace,

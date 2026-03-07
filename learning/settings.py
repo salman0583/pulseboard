@@ -2,14 +2,12 @@
 Django settings for learning project.
 Production-ready configuration using .env only.
 """
-
-from pathlib import Path
 import os
+from pathlib import Path
 import datetime
 from dotenv import load_dotenv
-import os
 
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
+
 # ======================================================
 # LOAD ENVIRONMENT
 # ======================================================
@@ -29,6 +27,10 @@ ALLOWED_HOSTS = os.environ.get(
     "ALLOWED_HOSTS",
     "127.0.0.1,localhost,pulseboard-backend.onrender.com,pulseboard-uik0.onrender.com",
 ).split(",")
+
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
+
+
 # SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 # ======================================================
 # OTP CONFIG
@@ -170,6 +172,8 @@ DATABASES = {
 # EMAIL
 # ======================================================
 
+
+
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = "smtp.gmail.com"
 EMAIL_PORT = 587
@@ -180,9 +184,7 @@ EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD")
 # EMAIL / RESEND
 # ==================================
 
-import os
 
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 # ======================================================
 # STATIC
 # ======================================================
